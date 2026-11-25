@@ -7,7 +7,7 @@ const format = x => Number(x).toLocaleString('ja-JP',{maximumFractionDigits:2});
 const invite = new URL(location.href).searchParams.get('room')?.toUpperCase();
 let mode=invite?'join':'create',room=null,token='',chosen=[],stake=10,busy=false,polling=false;
 let savedName='', viewKey='', savedDetails=new Set(),roomCode=invite||'';
-let questionDraft='', answerDraft='';
+let questionDraft='', answerDraft='', lieDraft=false;
 const storageKey=code=>'keisu.participant.'+code;
 function newToken(){return [...crypto.getRandomValues(new Uint8Array(32))].map(n=>n.toString(16).padStart(2,'0')).join('');}
 function storeValue(key,value){try{localStorage.setItem(key,value);}catch{}}
@@ -23,7 +23,7 @@ function lobbyForm(){
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <label>質問の進め方<select name="questionMode" id="question-mode"><option value="timer">制限時間（1分）</option><option value="chat">チャットで質問</option></select></label>
- <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required></label>`}
+ <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親が嘘をつけるのは、子全員の質問総数の3分の1を切り上げた回数です。</small></label>`}
  <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
  <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
 }
@@ -36,7 +36,7 @@ async function api(action,fields={},code=roomCode,credential=token){
 function draw(data){
  if(room && data.code===room.code && data.revision<room.revision)return;
  const nextKey=data.code+'/'+data.round+'/'+data.stage;
- if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';viewKey=nextKey;}
+ if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
  room=data;roomCode=data.code;
  try{const url=new URL(location.href);url.searchParams.set('room',roomCode);history.replaceState(null,'',url);}catch{}
  renderRoom();
@@ -55,18 +55,23 @@ function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
 function historyRows(r){
  const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}</b><span>${o.numbers.join('・')} ／ BET ${o.stake} ／ 受取 ${o.received}点</span></li>`).join('');
- return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p><ul class="list">${list}</ul><p>親の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>`;
+ const chat=r.chat?.length?`<div class="round-chat"><h3>質問と親の回答</h3><ol class="chat-list">${chatRecords(r.chat,true)}</ol></div>`:'';
+ return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p><ul class="list">${list}</ul><p>親の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${chat}`;
+}
+function chatRecords(entries,revealed=false){
+ return entries.map(q=>`<li class="chat-entry"><strong>${escapeHtml(memberName(q.playerId))}の質問</strong><p>${escapeHtml(q.question)}</p>${q.answer===null?'<small>親の回答待ち</small>':`<strong>親の回答</strong>${q.isLie===true?' <span class="lie-badge">嘘</span>':revealed&&q.isLie===null?' <small>嘘の記録なし</small>':''}<p>${escapeHtml(q.answer)}</p>`}</li>`).join('');
 }
 function chatPanel(parent){
  const chat=room.chat, entries=chat?.entries??[], pending=entries.find(q=>q.answer===null);
  const used=entries.filter(q=>q.playerId===room.me).length, limit=room.settings.questionsPerPlayer;
- const messages=entries.map(q=>`<li class="chat-entry"><strong>${escapeHtml(memberName(q.playerId))}の質問</strong><p>${escapeHtml(q.question)}</p>${q.answer===null?'<small>親の回答待ち</small>':`<strong>親の回答</strong><p>${escapeHtml(q.answer)}</p>`}</li>`).join('');
+ const messages=chatRecords(entries);
+ const remaining=parent?Math.max(0,chat.lieLimit-chat.liesUsed):null;
  let form='';
- if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}" placeholder="回答を入力"></label><button class="primary">回答を送る</button></form>`;
+ if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}" placeholder="回答を入力"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft&&remaining>0?'checked':''} ${remaining===0?'disabled':''}>この回答は嘘</label><button class="primary">回答を送る</button></form>`;
  else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}" placeholder="親への質問を入力"></label><button class="primary">質問を送る</button></form>`;
  let status=chat.complete?'全員の質問と回答が終わりました。':parent?(pending?'質問に回答してください。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あなたの残り質問回数：${limit-used}回`);
  const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
- return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
+ return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><p class="hint">親が嘘をつける回数：${chat.lieLimit}回${parent?`（残り${remaining}回）`:''}。嘘の内容は精算後に表示されます。</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
 }
 function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
@@ -76,7 +81,7 @@ function renderRoom(){
  if(room.stage==='lobby'){
   const players=room.members.map((m,i)=>`<li><span>${i+1}　${escapeHtml(m.name)}</span>${m.id===room.host?'<small>部屋の作成者</small>':''}</li>`).join('');
   html+=`<h1>待機室</h1><div class="box"><h2>部屋ID</h2><span class="code">${room.code}</span><p>招待リンクと、作成時に決めた合言葉を参加者に伝えてください。</p><button data-act="copy">招待リンクをコピー</button></div>
-  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回`:'制限時間：1分'}</p></div>
+  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回 ／ 嘘は親1人につき1ラウンド${Math.ceil((room.members.length-1)*room.settings.questionsPerPlayer/3)}回まで`:'制限時間：1分'}</p></div>
   ${panel('rename','表示名を変更',`<form id="rename" class="form"><label>表示名<input id="rename-name" name="name" required maxlength="20" value="${myName}"></label><button>変更を保存</button></form>`)}
   ${isHost?`<button class="primary wide" data-act="start" ${room.members.length<2?'disabled':''}>このメンバーで開始</button>`:'<p>作成者が開始するのを待っています。</p>'}`;
  }else{
@@ -124,12 +129,12 @@ async function perform(fn){
 }
 screen.addEventListener('toggle',e=>{const id=e.target.dataset.panel;if(id){if(e.target.open)savedDetails.add(id);else savedDetails.delete(id);}},true);
 screen.addEventListener('input',e=>{if(e.target.id==='room-bet')stake=e.target.value;if(e.target.name==='name'&&!room)savedName=e.target.value;if(e.target.id==='question-text')questionDraft=e.target.value;if(e.target.id==='answer-text')answerDraft=e.target.value;});
-screen.addEventListener('change',e=>{if(e.target.id==='question-mode'){const chat=e.target.value==='chat';document.querySelector('#question-count-label').hidden=!chat;document.querySelector('#question-count').disabled=!chat;}});
+screen.addEventListener('change',e=>{if(e.target.id==='question-mode'){const chat=e.target.value==='chat';document.querySelector('#question-count-label').hidden=!chat;document.querySelector('#question-count').disabled=!chat;}if(e.target.id==='answer-lie')lieDraft=e.target.checked;});
 screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);perform(async()=>{
  if(e.target.id==='rename'){draw(await api('rename',{name:f.get('name')}));return;}
  if(e.target.id==='question-form' || e.target.id==='answer-form'){
-  const asking=e.target.id==='question-form';const data=await api(asking?'ask':'answer',{round:room.round,text:f.get('text')});
-  if(asking)questionDraft='';else answerDraft='';draw(data);return;
+  const asking=e.target.id==='question-form';const data=await api(asking?'ask':'answer',{round:room.round,text:f.get('text'),...(asking?{}:{isLie:f.has('isLie')})});
+  if(asking)questionDraft='';else {answerDraft='';lieDraft=false;}draw(data);return;
  }
  const code=String(f.get('code')||'').replace(/[-\s]/g,'').toUpperCase();
  const candidate=(mode==='join'&&getValue(storageKey(code)))||newToken();
