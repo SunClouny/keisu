@@ -97,7 +97,7 @@ function validateRound(game, round, index) {
   integer(round.answer, 1, 9, '正解の数字');
   validateNames(round.names);
   if (game.rulesVersion === 2) validateOdds(round.odds);
-  if (round.lieBonusTenths !== undefined) integer(round.lieBonusTenths,0,10,'嘘による倍率');
+  if (round.lieBonusTenths !== undefined) integer(round.lieBonusTenths,0,50,'嘘による倍率');
   const children = game.players.filter(p => p.id !== round.parentId);
   if (!Array.isArray(round.bets) || round.bets.length !== children.length) fail('参加者の予想記録が不足しています。');
   const ids = new Set();

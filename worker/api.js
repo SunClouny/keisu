@@ -108,7 +108,7 @@ function update(room, action, b, member) {
       const settled=settle(g);
       if(room.settings.questionMode==='chat' && room.chat?.round===b.round){
         settled.chat=room.chat.entries.map(({playerId,question,answer,isLie})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null}));
-        settled.lieBonusTenths=Math.min(10,settled.chat.filter(q=>q.isLie===true).length);
+        settled.lieBonusTenths=Math.min(50,settled.chat.filter(q=>q.isLie===true).length*5);
       }
       room.endsAt=null;
     }

@@ -59,7 +59,7 @@ function lobbyForm(){
  ${joining?'<p class="hint">同じ表示名と部屋の合言葉で、元の参加者として戻れます。</p>':''}
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <label>質問の進め方<select name="questionMode" id="question-mode"><option value="timer">制限時間（1分）</option><option value="chat">チャットで質問</option></select></label>
- <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.1倍上がります（最大＋1倍）。</small></label>`}
+ <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.5倍上がります（最大＋5倍）。</small></label>`}
  <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
  <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
  if(joining)loadRooms();
@@ -165,7 +165,7 @@ function chatPanel(parent){
  else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}" placeholder="親への質問を入力"></label><button class="primary">質問を送る</button></form>`;
  let status=chat.complete?'全員の質問と回答が終わりました。':parent?(pending?'質問に回答してください。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あなたの残り質問回数：${limit-used}回`);
  const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
- return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><p class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.1倍上がります（最大＋1倍）。嘘の内容は精算後に表示されます。</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
+ return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><p class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.5倍上がります（最大＋5倍）。嘘の内容は精算後に表示されます。</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
 }
 function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
@@ -187,7 +187,7 @@ function renderRoom(){
  if(room.stage==='lobby'){
   const players=room.members.map((m,i)=>`<li><span>${i+1}　${escapeHtml(m.name)}</span>${m.id===room.host?'<small>部屋の作成者</small>':''}</li>`).join('');
   html+=`<h1>待機室</h1><div class="box"><h2>部屋ID</h2><span class="code">${room.code}</span><p>招待リンクと、作成時に決めた合言葉を参加者に伝えてください。</p><button data-act="copy">招待リンクをコピー</button></div>
-  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回 ／ 嘘は回数制限なし（嘘１回につき的中時の倍率＋0.1倍、最大＋1倍）`:'制限時間：1分'}</p></div>
+  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回 ／ 嘘は回数制限なし（嘘１回につき的中時の倍率＋0.5倍、最大＋5倍）`:'制限時間：1分'}</p></div>
   ${panel('rename','表示名を変更',`<form id="rename" class="form"><label>表示名<input id="rename-name" name="name" required maxlength="20" value="${myName}"></label><button>変更を保存</button></form>`)}
   ${isHost?`<button class="primary wide" data-act="start" ${room.members.length<2?'disabled':''}>このメンバーで開始</button>`:'<p>作成者が開始するのを待っています。</p>'}`;
  }else{

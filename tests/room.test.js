@@ -64,12 +64,25 @@ test('chat permits repeated lies and applies capped bonus to every correct bet',
   }
   await call(children[0],'bet',{round:0,numbers:[2],stake:100});
   const result=await call(children[1],'bet',{round:0,numbers:[2],stake:80}),round=result.history[0];
-  assert.equal(result.stage,'result');assert.equal(round.lieCount,12);assert.equal(round.lieBonusTenths,10);
+  assert.equal(result.stage,'result');assert.equal(round.lieCount,12);assert.equal(round.lieBonusTenths,50);
   assert.ok(round.chat.every(q=>q.isLie));
   const base=betting.market[1].base/2;
-  assert.deepEqual(round.outcomes.map(o=>o.received).sort((a,b)=>a-b),[Math.floor(80*(base+1)),Math.floor(100*(base+1))].sort((a,b)=>a-b));
-  assert.ok(round.outcomes.every(o=>o.baseOdds===base && o.lieBonus===1 && o.effectiveOdds===base+1));
+  assert.deepEqual(round.outcomes.map(o=>o.received).sort((a,b)=>a-b),[Math.floor(80*(base+5)),Math.floor(100*(base+5))].sort((a,b)=>a-b));
+  assert.ok(round.outcomes.every(o=>o.baseOdds===base && o.lieBonus===5 && o.effectiveOdds===base+5));
   assert.equal(round.parentDelta,-round.outcomes.reduce((sum,o)=>sum+o.delta,0));
+});
+
+test('three lies add 1.5 to each winning multiplier',async()=>{
+  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:2});
+  const betting=await call(parent,'secret',{round:0,number:1});
+  for(let i=0;i<4;i++){
+    await call(children[i%2],'ask',{round:0,text:`質問${i}`});
+    await call(parent,'answer',{round:0,text:'はい',isLie:i<3});
+  }
+  await call(children[0],'bet',{round:0,numbers:[1],stake:100});
+  const result=await call(children[1],'bet',{round:0,numbers:[1],stake:100}),round=result.history[0];
+  assert.equal(round.lieCount,3);assert.equal(round.lieBonusTenths,15);
+  assert.ok(round.outcomes.every(o=>o.lieBonus===1.5&&o.received===Math.floor(100*(betting.market[0].base/2+1.5))));
 });
 
 test('lie bonus uses exact final rounding and old rounds keep their historical payouts',()=>{
