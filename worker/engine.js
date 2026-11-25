@@ -45,6 +45,10 @@ export function validateSettings(settings) {
   return {...settings, questionMode, questionsPerPlayer};
 }
 
+export function stakeLimit(game) {
+  return game.splitBetRules ? Math.min(1000, game.settings.stake * 3) : 1000;
+}
+
 export function totalRounds(game) { return game.players.length * game.settings.turns; }
 export function parentAt(game, index = game.rounds.length) { return game.players[index % game.players.length]; }
 export function payout(stake, answer, count, odds = ODDS, people = 1) {
@@ -76,7 +80,7 @@ export function createGame(names, settings, id = globalThis.crypto.randomUUID(),
   const clean = names.map(name => typeof name === 'string' ? name.trim() : '');
   if (clean.some(name => !name || name.length > 20)) fail('名前は1〜20文字で入力してください。');
   if (new Set(clean).size !== clean.length) fail('参加者の名前は重複しないようにしてください。');
-  const game = {schemaVersion: SCHEMA, rulesVersion: 2, id, createdAt: new Date().toISOString(), completedAt: null,
+  const game = {schemaVersion: SCHEMA, rulesVersion: 2, splitBetRules: true, id, createdAt: new Date().toISOString(), completedAt: null,
     players: clean.map((name, index) => ({id: `p${index + 1}`, name})), settings: {...settings}, rounds: [], draft: null};
   if (randomizeOrder) {
     for (let i = game.players.length - 1; i > 0; i--) {
@@ -115,11 +119,11 @@ export function calculateRound(game, round) {
   const winningsAt = (bet,extra) => {
     if (!bet.numbers.includes(round.answer)) return 0;
     const stake=bet.stake ?? game.settings.stake, divisor=bet.numbers.length*people;
-    return Math.floor(stake*(odds[round.answer-1]*10+extra*divisor)/(10*divisor));
+    return Math.floor(stake*(odds[round.answer-1]*10+extra*(game.splitBetRules ? people : divisor))/(10*divisor));
   };
   const outcomes = round.bets.map(bet => {
     const stake=bet.stake ?? game.settings.stake, hit=bet.numbers.includes(round.answer);
-    const divisor=bet.numbers.length*people,baseOdds=odds[round.answer-1]/divisor,lieBonus=bonusTenths/10;
+    const divisor=bet.numbers.length*people,baseOdds=odds[round.answer-1]/divisor,lieBonus=bonusTenths/(10*(game.splitBetRules ? bet.numbers.length : 1));
     const received=winningsAt(bet,bonusTenths);
     return {playerId:bet.playerId,numbers:[...bet.numbers],hit,stake,received,delta:received-stake,
       baseOdds,lieBonus,effectiveOdds:baseOdds+lieBonus,popularity:people};
@@ -156,10 +160,14 @@ export function balances(game, through = game.rounds.length) {
   return result;
 }
 
-export function standings(game) {
-  const points = balances(game);
+export function standings(game, results = game.rounds.map(round => calculateRound(game, round))) {
+  const points = Object.fromEntries(game.players.map(p => [p.id, game.settings.initialPoints]));
+  for (const [i, result] of results.entries()) {
+    points[game.rounds[i].parentId] += result.parentDelta;
+    for (const outcome of result.outcomes) points[outcome.playerId] += outcome.delta;
+  }
   return game.players.map((p, order) => {
-    const childResults = game.rounds.flatMap(r => calculateRound(game, r).outcomes.filter(o => o.playerId === p.id));
+    const childResults = results.flatMap(r => r.outcomes.filter(o => o.playerId === p.id));
     return {...p, order, points: points[p.id], delta: points[p.id] - game.settings.initialPoints,
       hits: childResults.filter(o => o.hit).length, childRounds: childResults.length,
       parentRounds: game.rounds.filter(r => r.parentId === p.id).length};
@@ -199,7 +207,7 @@ export function undo(game) {
 }
 
 export function validateGame(game) {
-  if (!record(game) || game.schemaVersion !== SCHEMA || typeof game.id !== 'string' || game.id.length > 100 || !stamp(game.createdAt)) fail('競数の対戦データではありません。');
+  if (!record(game) || game.schemaVersion !== SCHEMA || typeof game.id !== 'string' || game.id.length > 100 || !stamp(game.createdAt)) fail('数読みダービーの対戦データではありません。');
   if (game.rulesVersion !== undefined && game.rulesVersion !== 2) fail('対応していない配当ルールです。');
   validateSettings(game.settings);
   if (!Array.isArray(game.players) || game.players.length < 2 || game.players.length > 10) fail('参加人数が不正です。');
@@ -236,7 +244,7 @@ export function validateGame(game) {
 }
 
 export function validateBackup(data) {
-  if (!record(data) || data.app !== 'keisu' || data.version !== SCHEMA || !Array.isArray(data.archives) || data.archives.length > 200) fail('対応している競数のバックアップを選んでください。');
+  if (!record(data) || data.app !== 'keisu' || data.version !== SCHEMA || !Array.isArray(data.archives) || data.archives.length > 200) fail('対応している数読みダービーのバックアップを選んでください。');
   if (data.activeGame !== null) validateGame(data.activeGame);
   const ids = new Set(data.activeGame ? [data.activeGame.id] : []);
   for (const g of data.archives) { validateGame(g); if (ids.has(g.id)) fail('対戦の記録が重複しています。'); ids.add(g.id); }

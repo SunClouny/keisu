@@ -48,20 +48,19 @@ function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
 function lobbyForm(){
  const joining=mode==='join';
- screen.innerHTML=`<section class="lobby-hero"><div><span class="hero-label">THE PREDICTION RACE</span><h1>数字を読め。<br>ウソを見ぬけ。</h1><p>2〜10人で楽しむ、数字と読み合いのゲーム。</p><span class="hero-badge">● オンライン対戦</span></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
- <h2 class="entry-title">合言葉で対戦</h2><p class="entry-copy">それぞれの端末から同じ部屋に集まろう。</p>
+ screen.innerHTML=`<section class="lobby-hero"><div><h1>数読みダービー</h1><p>親が選んだ馬を、質問をヒントに当てよう。<br>2〜10人用</p></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
  <nav class="tabs"><button data-act="create-mode" aria-pressed="${mode==='create'}">部屋を作る</button><button data-act="join-mode" aria-pressed="${mode==='join'}">部屋に入る</button></nav>
- ${joining?`<section class="box"><div class="room-list-heading"><h2>参加できる部屋</h2><button type="button" data-act="refresh-rooms">更新</button></div><div id="available-rooms" aria-live="polite"><p class="hint">部屋を探しています…</p></div><p class="hint">部屋を選んで、合言葉を入力してください。</p></section>`:''}
+ ${joining?`<section class="box"><div class="room-list-heading"><h2>参加できる部屋</h2><button type="button" data-act="refresh-rooms">更新</button></div><div id="available-rooms" aria-live="polite"><p class="hint">部屋を探しています…</p></div></section>`:''}
  ${joining?'<div id="recent-rooms"></div>':''}
  <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" autocomplete="off"></label>
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
- ${joining?'<p class="hint">同じ表示名と部屋の合言葉で、元の参加者として戻れます。</p>':''}
- ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
+ ${joining?'<p class="hint">再入室には前と同じ表示名と合言葉を使います。</p>':''}
+ ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準の賭け点<input type="number" name="stake" min="1" max="1000" value="10" required><small>上限はこの3倍（最大1,000点）</small></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <fieldset class="mode-choice"><legend>質問の進め方</legend><div class="mode-options"><label><input type="radio" name="questionMode" value="chat" checked><span>💬 チャットで質問</span></label><label><input type="radio" name="questionMode" value="timer"><span>⏱ 制限時間（1分）</span></label></div></fieldset>
- <label id="question-count-label">質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" required><small class="hint">親の嘘や「わからない」１回につき、的中時の倍率が0.5倍上がります（最大＋5倍）。「わからない」では質問回数を１回使い、質問した子も親の追加支払いと同じ額を負担し、ほかの子に分けます。</small></label>`}
- <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
- <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
+ <label id="question-count-label">質問回数（子1人あたり）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" required></label>`}
+ <button class="primary">${joining?'参加する':'部屋を作る'}</button></form>
+ <p class="hint">部屋の有効期限は作成から24時間です。</p>`;
  if(joining)loadRooms();
 }
 async function api(action,fields={},code=roomCode,credential=token){
@@ -77,7 +76,7 @@ async function loadRooms(){
   const data=await api('list',{},'',newToken());
   if(request!==listRequest||!container.isConnected)return;
   const recentContainer=document.querySelector('#recent-rooms'),active=new Set(data.activeCodes||[]),recent=recentRooms().filter(x=>active.has(x.code));
-  if(recentContainer)recentContainer.innerHTML=recent.length?`<section class="box"><h2>参加した部屋に戻る</h2><p class="hint">このブラウザで参加した部屋</p><div class="recent-rooms">${recent.map(x=>`<button type="button" data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>戻る</span></button>`).join('')}</div></section>`:'';
+  if(recentContainer)recentContainer.innerHTML=recent.length?`<section class="box"><h2>参加した部屋に戻る</h2><div class="recent-rooms">${recent.map(x=>`<button type="button" data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>戻る</span></button>`).join('')}</div></section>`:'';
   container.innerHTML=data.rooms.length?`<div class="recent-rooms">${data.rooms.map(x=>`<button type="button" data-act="select-room" data-code="${escapeHtml(x.code)}"><b>${escapeHtml(x.host)}さんの部屋</b><small>部屋 ${escapeHtml(x.code)} ・ ${Number(x.players)} / 10人</small><span>選ぶ</span></button>`).join('')}</div>`:'<p class="hint">参加できる部屋はありません。</p>';
  }catch(error){if(request===listRequest&&container.isConnected)container.innerHTML='<p class="hint">部屋を読み込めませんでした。更新してください。</p>';}
 }
@@ -131,7 +130,7 @@ function horses(interactive){
  }).join('')+'</div>';
 }
 function questionOptions(){
- return `<section class="box question-options"><h2>質問の出走表</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
+ return `<section class="box question-options"><h2>出走表</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
 }
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
@@ -140,19 +139,19 @@ function oddsText(outcome){
  if(!Number.isFinite(outcome.effectiveOdds))return '';
  const base=Number.isFinite(outcome.baseOdds)?outcome.baseOdds:outcome.effectiveOdds;
  const bonus=Number.isFinite(outcome.lieBonus)?outcome.lieBonus:0;
- return bonus?`倍率：約${formatOdds(base)}倍 ＋ 嘘・わからないの上乗せ ${formatOdds(bonus)}倍 ＝ 約${formatOdds(outcome.effectiveOdds)}倍`:`倍率：約${formatOdds(outcome.effectiveOdds)}倍`;
+ return bonus?`倍率：${formatOdds(outcome.effectiveOdds)}倍（${formatOdds(base)} ＋ 上乗せ ${formatOdds(bonus)}）`:`倍率：${formatOdds(outcome.effectiveOdds)}倍`;
 }
 function myRoundResult(r){
  if(r.parent===room.me)return `<section class="box my-result my-result-parent"><h2>あなたは親</h2><p>このラウンドの収支</p><strong class="my-result-points">${signedPoints(r.parentDelta)}</strong></section>`;
  const outcome=r.outcomes.find(o=>o.playerId===room.me);
  if(!outcome)return '';
- return `<section class="box my-result ${outcome.hit?'my-result-hit':'my-result-miss'}"><h2>あなたの結果</h2><strong class="my-result-status">${outcome.hit?'🎯 的中！':'はずれ'}</strong><p>あなたの予想：${outcome.numbers.join('・')}　／　正解：${r.answer}</p><p>${oddsText(outcome)}${outcome.hit?'':'（的中した場合）'}</p><p>BET ${format(outcome.stake)}点　／　受取 ${format(outcome.received)}点</p><p>このラウンドの収支 <strong class="my-result-points">${signedPoints(outcome.delta)}</strong></p></section>`;
+ return `<section class="box my-result ${outcome.hit?'my-result-hit':'my-result-miss'}"><h2>あなたの結果</h2><strong class="my-result-status">${outcome.hit?'🎯 的中！':'はずれ'}</strong><p>あなたの予想：${outcome.numbers.join('・')}　／　正解：${r.answer}</p>${outcome.hit?'<p>'+oddsText(outcome)+'</p>':''}<p>賭け点 ${format(outcome.stake)}点　／　受取 ${format(outcome.received)}点</p><p>このラウンドの収支 <strong class="my-result-points">${signedPoints(outcome.delta)}</strong></p></section>`;
 }
-function historyRows(r){
- const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}${o.playerId===room.me?'（あなた）':''} <span class="result-badge ${o.hit?'result-badge-hit':'result-badge-miss'}">${o.hit?'的中':'はずれ'}</span></b><span>${o.numbers.join('・')} ／ ${oddsText(o)}${o.hit?'':'（的中した場合）'} ／ BET ${format(o.stake)} ／ 受取 ${format(o.received)}点 ／ 収支 ${signedPoints(o.delta)}</span></li>`).join('');
+function historyRows(r,includeAnswer=true){
+ const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}${o.playerId===room.me?'（あなた）':''} <span class="result-badge ${o.hit?'result-badge-hit':'result-badge-miss'}">${o.hit?'的中':'はずれ'}</span></b><span>${o.numbers.join('・')} ／ ${o.hit?oddsText(o)+' ／ ':''}賭け点 ${format(o.stake)} ／ 受取 ${format(o.received)}点 ／ 収支 ${signedPoints(o.delta)}</span></li>`).join('');
  const chat=r.chat?.length?`<div class="round-chat"><h3>質問と親の回答</h3><ol class="chat-list">${chatRecords(r.chat,true)}</ol></div>`:'';
- const transfers=r.unknownTransfers?.length?`<div class="round-chat"><h3>「わからない」の精算</h3><ul class="list">${r.unknownTransfers.map(t=>`<li><b>${escapeHtml(memberName(t.playerId))}の負担　${signedPoints(-t.amount)}</b><span>${t.shares.length?t.shares.map(share=>`${escapeHtml(memberName(share.playerId))}に${format(share.points)}点`).join('、'):'分配先なし'}${t.amount===0?'（配当の増加なし）':''}</span></li>`).join('')}</ul><p class="hint">質問した子の負担は、親の追加支払いと同じ額です。的中者がいない場合や倍率が上限に達している場合は負担が増えません。</p></div>`:'';
- return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p>${r.chat?`<p>親の嘘：${r.lieCount??r.chat.filter(q=>q.isLie===true).length}回 ／ わからない：${r.chat.filter(q=>q.isUnknown===true).length}回 ／ ${r.lieBonusTenths===undefined?'嘘の上乗せなし（以前のルール）':`嘘・わからないによる上乗せ：${formatOdds(r.lieBonusTenths/10)}倍`}</p>`:''}<ul class="list">${list}</ul><p class="hint">倍率は表示上丸めています。受取額は計算後に端数を切り捨てます。</p><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${transfers}${chat}`;
+ const transfers=r.unknownTransfers?.length?`<div class="round-chat"><h3>「わからない」の精算</h3><ul class="list">${r.unknownTransfers.map(t=>`<li><b>${escapeHtml(memberName(t.playerId))}の負担　${signedPoints(-t.amount)}</b><span>${t.shares.length?t.shares.map(share=>`${escapeHtml(memberName(share.playerId))}に${format(share.points)}点`).join('、'):'分配先なし'}${t.amount===0?'（配当の増加なし）':''}</span></li>`).join('')}</ul><p class="hint">質問した子の負担は、親の追加支払いと同額です。</p></div>`:'';
+ return `${includeAnswer?`<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p>`: ''}${r.chat?`<p>親の嘘：${r.lieCount??r.chat.filter(q=>q.isLie===true).length}回 ／ わからない：${r.chat.filter(q=>q.isUnknown===true).length}回 ／ ${r.lieBonusTenths===undefined?'嘘の上乗せなし（以前のルール）':`1点予想の上乗せ：${formatOdds(r.lieBonusTenths/10)}倍`}</p>`:''}<ul class="list">${list}</ul><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${transfers}${chat}`;
 }
 function chatRecords(entries,revealed=false){
  return entries.map(q=>`<li class="chat-entry"><strong>${escapeHtml(memberName(q.playerId))}の質問</strong><p>${escapeHtml(q.question)}</p>${q.answer===null?'<small>親の回答待ち</small>':`<strong>親の回答</strong>${q.isUnknown===true?'':q.isLie===true?' <span class="lie-badge">嘘</span>':revealed&&q.isLie===null?' <small>嘘の記録なし</small>':''}<p>${escapeHtml(q.answer)}</p>`}</li>`).join('');
@@ -162,11 +161,11 @@ function chatPanel(parent){
  const used=entries.filter(q=>q.playerId===room.me).length, limit=room.settings.questionsPerPlayer;
  const messages=chatRecords(entries);
  let form='';
- if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}" placeholder="回答を入力"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft?'checked':''}>この回答は嘘</label><button class="primary">回答を送る</button><button type="button" data-act="unknown-answer">わからない</button></form>`;
- else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}" placeholder="親への質問を入力"></label><button class="primary">質問を送る</button></form>`;
- let status=chat.complete?'全員の質問と回答が終わりました。':parent?(pending?'質問に回答してください。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あなたの残り質問回数：${limit-used}回`);
+ if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft?'checked':''}>この回答は嘘</label><button class="primary">回答を送る</button><button type="button" data-act="unknown-answer">わからない</button></form>`;
+ else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}"></label><button class="primary">質問を送る</button></form>`;
+ let status=chat.complete?'質問終了':parent?(pending?'回答待ちの質問があります。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あと${limit-used}回質問できます`);
  const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
- return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><p class="hint">親の嘘や「わからない」１回につき、的中時の倍率が0.5倍上がります（最大＋5倍）。「わからない」では質問回数を１回使い、質問した子も親の追加支払いと同じ額を負担し、ほかの子に分けます。「わからない」と入力した場合も同じ扱いです。嘘の内容は精算後に表示されます。２人対戦では子の負担は分配されません。</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
+ return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p>${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'複数の馬を選ぶと、上乗せも選んだ数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}<ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
 }
 function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
@@ -176,10 +175,10 @@ function renderRoom(){
  if(revealingKey===room.code+':'+room.round && (room.stage==='result'||room.stage==='finished')){
   if(revealPhase==='standings'){
    const rows=room.standings.map((p,i)=>`<li style="--delay:${(room.standings.length-1-i)*0.65}s"><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('');
-   screen.innerHTML=`<section class="ranking-reveal" aria-live="polite"><span class="reveal-eyebrow">${room.stage==='finished'?'FINAL RANKING':'ROUND RANKING'}</span><h1>${room.stage==='finished'?'最終順位発表！':'順位発表！'}</h1><p>${room.stage==='finished'?'最後の順位はこちら！':'このラウンド終了時の順位はこちら！'}</p><ol class="ranking-reveal-list">${rows}</ol><button data-act="ranking-skip">${room.stage==='finished'?'対戦終了画面へ':'ラウンド結果へ'}</button></section>`;
+   screen.innerHTML=`<section class="ranking-reveal" aria-live="polite"><h1>${room.stage==='finished'?'最終順位発表！':'順位発表！'}</h1><ol class="ranking-reveal-list">${rows}</ol><button data-act="ranking-skip">${room.stage==='finished'?'対戦終了画面へ':'ラウンド結果へ'}</button></section>`;
   }else{
    const result=room.history.at(-1);
-   screen.innerHTML=`<section class="reveal-stage" aria-live="polite"><span class="reveal-eyebrow">RESULT TIME</span><h1>結果発表！</h1><p>運命の数字は……</p><div class="reveal-card"><span class="reveal-question" aria-hidden="true">?</span><strong class="reveal-number">${result.answer}</strong></div><p class="reveal-name">${escapeHtml(result.names?.[result.answer-1]??'')}</p><button data-act="reveal-skip">順位を見る</button></section>`;
+   screen.innerHTML=`<section class="reveal-stage" aria-live="polite"><h1>結果発表！</h1><div class="reveal-card"><span class="reveal-question" aria-hidden="true">?</span><strong class="reveal-number">${result.answer}</strong></div><p class="reveal-name">${escapeHtml(result.names?.[result.answer-1]??'')}</p><button data-act="reveal-skip">順位を見る</button></section>`;
   }
   return;
  }
@@ -187,8 +186,8 @@ function renderRoom(){
  if(storageWarning)html+='<p class="storage-warning" role="status">このブラウザに参加情報を保存できません。戻るときは表示名と部屋の合言葉を入力してください。</p>';
  if(room.stage==='lobby'){
   const players=room.members.map((m,i)=>`<li><span>${i+1}　${escapeHtml(m.name)}</span>${m.id===room.host?'<small>部屋の作成者</small>':''}</li>`).join('');
-  html+=`<h1>待機室</h1><div class="box"><h2>部屋ID</h2><span class="code">${room.code}</span><p>招待リンクと、作成時に決めた合言葉を参加者に伝えてください。</p><button data-act="copy">招待リンクをコピー</button></div>
-  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回 ／ 嘘は回数制限なし（嘘・わからない１回につき的中時の倍率＋0.5倍、最大＋5倍）`:'制限時間：1分'}</p></div>
+  html+=`<h1>待機室</h1><div class="box"><h2>部屋ID</h2><span class="code">${room.code}</span><p>招待リンクと合言葉を参加者に送ってください。</p><button data-act="copy">招待リンクをコピー</button></div>
+  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">親の順番は抽選で決まります。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 賭け点 ${room.settings.stake}点 ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回`:'制限時間：1分'}</p></div>
   ${panel('rename','表示名を変更',`<form id="rename" class="form"><label>表示名<input id="rename-name" name="name" required maxlength="20" value="${myName}"></label><button>変更を保存</button></form>`)}
   ${isHost?`<button class="primary wide" data-act="start" ${room.members.length<2?'disabled':''}>このメンバーで開始</button>`:'<p>作成者が開始するのを待っています。</p>'}`;
  }else{
@@ -198,14 +197,15 @@ function renderRoom(){
    if(parent) html+='<div class="bottom"><button class="primary" data-act="secret" '+(chosen.length?'':'disabled')+'>この数字で確定・質問開始</button></div>';
   }else if(room.stage==='betting'){
    const chatting=room.settings.questionMode==='chat', ready=!chatting||room.chat?.complete;
+   if(parent && room.mySecret)html+=`<p class="box">あなたが選んだ馬　<strong>${room.mySecret}　${escapeHtml(room.names[room.mySecret-1])}</strong></p>`;
    html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
-   <div class="box"><h2>${parent?'基本オッズ':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">全員の予想が確定した後、予想人数を反映したオッズを公開します。</p>${horses(!parent)}
-   ${parent?'':`<label>BET（1〜1,000点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="1000" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>的中時は BET ×（基本オッズ ÷ 自分の予想数 ÷ その数字の予想人数${chatting?' ＋ 嘘・わからないによる倍率':''}）。端数は切り捨てます。</small>`}</div>
+   <div class="box"><h2>${parent?'出走表':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ馬を選んだ人数で基本オッズを割ります。倍率は全員の確定後に発表します。</p>${horses(!parent)}
+   ${parent?'':`<label>賭け点（1〜${format(room.maxStake??1000)}点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="${room.maxStake??1000}" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>賭け点は選んだ馬に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
-   if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想とBETを確定</button></div>';
+   if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想を確定</button></div>';
   }else{
-   const r=room.history.at(-1); html+=`${myRoundResult(r)}<div class="box hero"><h2>正解</h2><strong class="win">${r.answer}　${escapeHtml(r.names[r.answer-1])}</strong></div><div class="box"><h2>今回の精算</h2>${historyRows(r)}</div>`;
+   const r=room.history.at(-1); html+=`${myRoundResult(r)}<div class="box hero"><h2>正解</h2><strong class="win">${r.answer}　${escapeHtml(r.names[r.answer-1])}</strong></div><div class="box"><h2>今回の精算</h2>${historyRows(r,false)}</div>`;
    if(room.stage==='result')html+=isHost||parent?'<button class="primary wide" data-act="next">次のラウンドへ</button>':'<p>次のラウンドを待っています。</p>';
   }
   if(room.stage==='finished')html+='<div class="box"><h2>最終順位</h2>'+ranking()+'</div>';else html+=panel('rank','現在の順位',ranking());
@@ -216,7 +216,8 @@ function renderRoom(){
  screen.innerHTML=html;
  const newChat=document.querySelector('.chat > .chat-list');
  if(newChat)newChat.scrollTop=(!oldChat||newChat.children.length>oldChatCount)?newChat.scrollHeight:oldChatTop;
- if(id==='rename-name'&&draftName!=null)document.querySelector('#rename-name').value=draftName;
+ const renameField=document.querySelector('#rename-name');
+ if(id==='rename-name'&&draftName!=null&&renameField)renameField.value=draftName;
  if(id && ['room-bet','rename-name','question-text','answer-text'].includes(id)){const f=document.getElementById(id);if(f&&!f.disabled){f.focus({preventScroll:true});if(f.type==='text'&&pos!=null)f.setSelectionRange(pos,pos);}}
  tick();
 }
@@ -224,11 +225,16 @@ function tick(){
  const timer=document.querySelector('#timer');if(!timer)return;
  const s=Math.max(0,Math.ceil((room.endsAt-Date.now())/1000));
  timer.textContent=s?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'質問終了';
+ const betButton=document.querySelector('[data-act="bet"]');
+ if(betButton && room.splitBetRules){
+  betButton.disabled=s>0 || !chosen.length;
+  betButton.textContent=s>0?'質問終了後に確定できます':'予想を確定';
+ }
 }
 async function refresh(){
  if(!room||busy||polling||document.hidden)return;
  const expected=room.code;polling=true;
- try{const data=await api('state');if(room?.code===expected&&!busy&&data.revision>room.revision)draw(data);document.querySelector('#sync').textContent='接続中';}
+ try{const data=await api('state');if(room?.code===expected&&!busy&&data.revision>room.revision)draw(data);document.querySelector('#sync').textContent='';}
  catch(e){document.querySelector('#sync').textContent='再接続中';if(e.status===403)say('別の端末で再入室された可能性があります。開始画面から表示名と合言葉を入力してください。');else if([410,404].includes(e.status))say(e.message);}
  finally{polling=false;}
 }
@@ -270,7 +276,7 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
   if(a==='copy'){const link=new URL(location.href);link.searchParams.set('room',room.code);try{await navigator.clipboard.writeText(link.href);say('招待リンクをコピーしました。合言葉は別途伝えてください。');}catch{say(link.href);}return;}
   const payload={round:room.round};
   if(a==='secret')payload.number=chosen[0];
-  if(a==='bet'){payload.numbers=chosen;payload.stake=Number(stake);if(!Number.isInteger(payload.stake)||payload.stake<1||payload.stake>1000)throw Error('BETは1〜1000点の整数で入力してください。');}
+  if(a==='bet'){payload.numbers=chosen;payload.stake=Number(stake);if(!Number.isInteger(payload.stake)||payload.stake<1||payload.stake>(room.maxStake??1000))throw Error(`賭け点は1〜${room.maxStake??1000}点で入力してください。`);}
   draw(await api(a,payload));
  });
 });

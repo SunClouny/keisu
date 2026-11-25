@@ -1,4 +1,4 @@
-import {createGame, validateSettings, totalRounds, parentAt, balances, market, calculateRound, standings, settle, advance, validNumbers} from './engine.js';
+import {createGame, validateSettings, totalRounds, parentAt, stakeLimit, market, calculateRound, standings, settle, advance, validNumbers} from './engine.js';
 
 const lifetime = 24 * 60 * 60 * 1000;
 const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -53,7 +53,9 @@ function view(room, self) {
     ...(self===parent && current ? {liesUsed:room.chat.entries.filter(q=>q.isLie===true).length} : {})
   } : null;
   return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
-    standings:standings(g), history, names:current?.names??g.rounds.at(-1)?.names,
+    splitBetRules:!!g.splitBetRules, maxStake:stakeLimit(g),
+    ...(current?.stage==='betting' && self===parent ? {mySecret:current.secret} : {}),
+    standings:standings(g,history), history, names:current?.names??g.rounds.at(-1)?.names,
     market:current?market(g).map(m=>({...m,people:0,adjusted:m.base})):market(g,g.rounds.at(-1)), endsAt:room.endsAt,
     confirmed:current?Object.keys(current.bets).filter(id=>current.bets[id].locked):[],
     myBet:current?.bets[self]??null,
@@ -103,9 +105,12 @@ function update(room, action, b, member) {
   if(action==='bet'){
     requireValue(!parent && g.draft?.stage==='betting','子の予想を受け付ける時間ではありません。',409);
     requireValue(chatComplete(room),'全員の質問と親の回答が終わるまでお待ちください。',409);
+    if(g.splitBetRules && room.settings.questionMode==='timer'){
+      requireValue(Date.now()>=room.endsAt,'質問時間が終わってから予想を確定してください。',409);
+    }
     const bet=g.draft.bets[member.id];
     requireValue(!bet.locked,'予想は確定済みです。',409);
-    requireValue(Number.isInteger(b.stake)&&b.stake>=1&&b.stake<=1000,'BETは1〜1000点の整数です。');
+    requireValue(Number.isInteger(b.stake)&&b.stake>=1&&b.stake<=stakeLimit(g),`賭け点は1〜${stakeLimit(g)}点で入力してください。`);
     bet.stake=b.stake;bet.numbers=validNumbers(b.numbers);bet.locked=true;
     if(Object.values(g.draft.bets).every(x=>x.locked)){
       const settled=settle(g);

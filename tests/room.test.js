@@ -34,13 +34,20 @@ async function createThree(settings){
   return {...env,started,keys,parent,children};
 }
 
-test('random order preserves identities, private choices and correct settlement',async()=>{
+test('random order preserves identities, private choices and correct settlement',async(t)=>{
   assert.equal(new Set(NOUNS).size,587);
   const {call,started,parent,children,keys}=await createThree({initialPoints:300,stake:10,turns:1});
   assert.equal(new Set(started.names).size,9);
   await call(children[0],'secret',{round:0,number:1},403);
   const betting=await call(parent,'secret',{round:0,number:1});
   assert.equal(betting.stage,'betting');assert.equal('secret' in betting,false);
+  assert.equal(betting.mySecret,1);
+  assert.equal('mySecret' in await call(children[0],'state'),false);
+  assert.equal(betting.maxStake,30);
+  t.mock.method(Date,'now',()=>betting.endsAt-1);
+  await call(children[0],'bet',{round:0,stake:10,numbers:[1]},409);
+  Date.now.mock.mockImplementation(()=>betting.endsAt);
+  await call(children[0],'bet',{round:0,stake:31,numbers:[1]},400);
   await call(children[0],'bet',{round:0,stake:0,numbers:[1]},400);
   const base=betting.market[0].base;
   await Promise.all([call(children[0],'bet',{round:0,stake:13,numbers:[1]}),call(children[1],'bet',{round:0,stake:27,numbers:[1,3]})]);
@@ -54,7 +61,7 @@ test('random order preserves identities, private choices and correct settlement'
 });
 
 test('chat permits repeated lies and applies capped bonus to every correct bet',async()=>{
-  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:6});
+  const {call,parent,children}=await createThree({initialPoints:300,stake:40,turns:1,questionMode:'chat',questionsPerPlayer:6});
   const betting=await call(parent,'secret',{round:0,number:2});
   for(let i=0;i<12;i++){
     const child=children[i%2];await call(child,'ask',{round:0,text:`質問${i}`});
@@ -73,7 +80,7 @@ test('chat permits repeated lies and applies capped bonus to every correct bet',
 });
 
 test('three lies add 1.5 to each winning multiplier',async()=>{
-  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:2});
+  const {call,parent,children}=await createThree({initialPoints:300,stake:40,turns:1,questionMode:'chat',questionsPerPlayer:2});
   const betting=await call(parent,'secret',{round:0,number:1});
   for(let i=0;i<4;i++){
     await call(children[i%2],'ask',{round:0,text:`質問${i}`});
@@ -95,7 +102,7 @@ test('lie bonus uses exact final rounding and old rounds keep their historical p
 });
 
 test('unknown increases parent risk and transfers the same amount from asker to other children',async()=>{
-  const {call,started,parent,children,keys}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:1});
+  const {call,started,parent,children,keys}=await createThree({initialPoints:300,stake:40,turns:1,questionMode:'chat',questionsPerPlayer:1});
   const betting=await call(parent,'secret',{round:0,number:1});
   await call(children[0],'ask',{round:0,text:'難しい？'});
   await call(children[1],'answer',{round:0,isUnknown:true},403);
@@ -116,7 +123,7 @@ test('unknown increases parent risk and transfers the same amount from asker to 
 });
 
 test('a typed unknown answer uses the same rules as the button',async()=>{
-  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:1});
+  const {call,parent,children}=await createThree({initialPoints:300,stake:40,turns:1,questionMode:'chat',questionsPerPlayer:1});
   await call(parent,'secret',{round:0,number:1});await call(children[0],'ask',{round:0,text:'質問'});
   const answer=await call(parent,'answer',{round:0,text:'分かりません。',isLie:true});
   assert.equal(answer.chat.entries[0].answer,'わからない');assert.equal(answer.chat.entries[0].isUnknown,true);assert.equal(answer.chat.entries[0].isLie,false);
@@ -148,4 +155,56 @@ test('reentry keeps identity and active room listing hides empty or started room
   await call('c','leave');assert.equal((await call('b','list')).rooms.length,0);
   await call('c','presence');await call('c','start');
   const listing=await call('b','list');assert.equal(listing.rooms.length,0);assert.ok(listing.activeCodes.includes(created.code));
+});
+
+
+test('split bets divide the bonus across picks and share the exact extra payout at every table size',()=>{
+  const odds=[5,6,7,8,9,10,12,15,20];
+  for(let size=2;size<=10;size++){
+    const players=Array.from({length:size},(_,i)=>({id:'p'+(i+1)}));
+    const game={rulesVersion:2,splitBetRules:true,players,settings:{stake:10}};
+    for(let picks=1;picks<=9;picks++){
+      const bets=players.slice(1).map((p,i)=>({playerId:p.id,stake:11+i,numbers:Array.from({length:picks},(_,n)=>n+1)}));
+      const round={index:0,parentId:'p1',answer:1,odds,bets,chat:[{playerId:'p2',isUnknown:true}],unknownTransferVersion:1,lieBonusTenths:5};
+      const result=calculateRound(game,round);
+      const baseline=calculateRound(game,{...round,chat:[],lieBonusTenths:0});
+      const [transfer]=result.unknownTransfers;
+      assert.equal(transfer.amount,baseline.parentDelta-result.parentDelta);
+      assert.equal(transfer.shares.reduce((sum,v)=>sum+v.points,0),size===2?0:transfer.amount);
+      assert.equal(result.outcomes.reduce((sum,o)=>sum+o.delta,result.parentDelta),size===2 && transfer.amount ? -transfer.amount : 0);
+      for(const outcome of result.outcomes){
+        assert.equal(outcome.lieBonus,0.5/picks);
+        assert.equal(outcome.received,Math.floor(outcome.stake*(10+size-1)/(2*picks*(size-1))));
+      }
+      const legacy=calculateRound({...game,splitBetRules:undefined},round);
+      assert.equal(legacy.outcomes[0].lieBonus,0.5);
+    }
+  }
+});
+
+test('two players can finish a match, take one parent turn each and rejoin at the final ranking',async()=>{
+  const {call,setCode}=setup();
+  const created=await call('a','create',{name:names.a,phrase:pass,settings:{initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:1}},201);
+  setCode(created.code);
+  await call('b','join',{name:names.b,phrase:pass});
+  let view=await call('a','start');
+  const firstParent=view.parent;
+  for(let round=0;round<2;round++){
+    const parent=view.parent===created.me?'a':'b', child=parent==='a'?'b':'a';
+    await call(parent,'secret',{round,number:1});
+    await call(child,'ask',{round,text:'食べられる？'});
+    await call(parent,'answer',{round,isUnknown:true});
+    view=await call(child,'bet',{round,numbers:[1,2,3],stake:30});
+    assert.equal(view.history.at(-1).unknownTransfers[0].amount,5);
+    if(round===0){
+      assert.equal(view.stage,'result');
+      view=await call('a','next',{round});
+      assert.notEqual(view.parent,firstParent);
+    }
+  }
+  assert.equal(view.stage,'finished');
+  assert.equal(view.standings.reduce((sum,p)=>sum+p.points,0),590);
+  const rejoined=await call('c','join',{name:names.a,phrase:pass});
+  assert.equal(rejoined.me,created.me);
+  assert.deepEqual(rejoined.standings,view.standings);
 });
