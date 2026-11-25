@@ -153,12 +153,19 @@ export async function handleAPI(request, bucket) {
       const obj=await bucket.get(path);requireValue(obj,'部屋が見つかりません。',404);
       const room=await obj.json();requireValue(room.expires>Date.now(),'この部屋の利用期限が終了しました。',410);
       let member=room.members.find(m=>m.key===key);
-      if(b.action==='join'){
-        if(member)return reply(view(room,member.id));
+      if(b.action==='join'||b.action==='rejoin'){
         requireValue(await phraseHash(phrase(b.phrase),room.salt)===room.proof,'合言葉が違います。',403);
-        requireValue(!room.game&&room.members.length<10,'対戦開始済み、または満室です。',409);
-        const name=cleanName(b.name);uniqueName(room,name,null);
-        member={id:'p'+(room.members.length+1),name,key};room.members.push(member);
+        const name=cleanName(b.name),existing=room.members.find(m=>m.name===name);
+        if(existing){
+          requireValue(!member||member.id===existing.id,'この端末の参加情報を確認してください。',409);
+          if(existing.key===key)return reply(view(room,existing.id));
+          existing.key=key;member=existing;
+        }else{
+          requireValue(b.action!=='rejoin','その名前の参加者が見つかりません。表示名を確認してください。',404);
+          requireValue(!member,'この端末の参加情報を確認してください。',409);
+          requireValue(!room.game&&room.members.length<10,'対戦開始済み、または満室です。',409);
+          member={id:'p'+(room.members.length+1),name,key};room.members.push(member);
+        }
       } else {
         requireValue(member,'この端末から部屋に参加してください。',403);
         if(b.action==='state')return reply(view(room,member.id));

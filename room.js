@@ -8,26 +8,57 @@ const invite = new URL(location.href).searchParams.get('room')?.toUpperCase();
 let mode=invite?'join':'create',room=null,token='',chosen=[],stake=10,busy=false,polling=false;
 let savedName='', viewKey='', savedDetails=new Set(),roomCode=invite||'';
 let questionDraft='', answerDraft='', lieDraft=false;
+let storageWarning=false;
 let revealingKey=null, revealTimer=null;
 const revealedRounds=new Set();
 const storageKey=code=>'keisu.participant.'+code;
+const recentKey='keisu.recentRooms.v1';
 function newToken(){return [...crypto.getRandomValues(new Uint8Array(32))].map(n=>n.toString(16).padStart(2,'0')).join('');}
-function storeValue(key,value){try{localStorage.setItem(key,value);}catch{}}
+function storeValue(key,value){try{localStorage.setItem(key,value);return true;}catch{return false;}}
 function getValue(key){try{return localStorage.getItem(key)||'';}catch{return '';}}
+function recentRooms(){
+ try{const items=JSON.parse(getValue(recentKey)||'[]');if(!Array.isArray(items))return [];
+  const rooms=items.filter(x=>x && /^[A-Z2-9]{12}$/.test(x.code) && typeof x.name==='string' && x.name.length<=20 && Number.isFinite(x.expires) && x.expires>Date.now() && /^[0-9a-f]{64}$/.test(getValue(storageKey(x.code))));
+  const known=new Set(items.filter(x=>x && /^[A-Z2-9]{12}$/.test(x.code) && Number.isFinite(x.expires) && x.expires<=Date.now()).map(x=>x.code));
+  for(const room of rooms)known.add(room.code);
+  for(let i=0;i<localStorage.length && rooms.length<8;i++){
+   const key=localStorage.key(i), match=key?.match(/^keisu\.participant\.([A-Z2-9]{12})$/);
+   if(match && !known.has(match[1]) && /^[0-9a-f]{64}$/.test(getValue(key))){rooms.push({code:match[1],name:'参加済み',expires:null});known.add(match[1]);}
+  }
+  return rooms.slice(0,8);
+ }catch{return [];}
+}
+function rememberRoom(data){
+ if(!/^[0-9a-f]{64}$/.test(token))return;
+ const name=data.members.find(m=>m.id===data.me)?.name;
+ if(!name)return;
+ const saved=storeValue(storageKey(data.code),token);
+ const rooms=[{code:data.code,name,expires:data.expires},...recentRooms().filter(x=>x.code!==data.code)].slice(0,8);
+ const listed=storeValue(recentKey,JSON.stringify(rooms));
+ storageWarning=!saved||!listed;
+}
+async function restoreRoom(code,credential){
+ let data;
+ try{data=await api('state',{},code,credential);}
+ catch(error){if(error.status===403)throw Error('別の端末で再入室された可能性があります。表示名と部屋の合言葉で再入室してください。');throw error;}
+ token=credential;roomCode=data.code;draw(data);
+}
 function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
 function lobbyForm(){
- const joining=mode==='join';
+ const recovering=mode==='recover', joining=mode==='join'||recovering, recent=recentRooms();
  screen.innerHTML=`<section class="lobby-hero"><div><span class="hero-label">THE PREDICTION RACE</span><h1>数字を読め。<br>ウソを見ぬけ。</h1><p>2〜10人で楽しむ、数字と読み合いのゲーム。</p><span class="hero-badge">● オンライン対戦</span></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
  <h2 class="entry-title">合言葉で対戦</h2><p class="entry-copy">それぞれの端末から同じ部屋に集まろう。</p>
- <nav class="tabs"><button data-act="create-mode" aria-pressed="${!joining}">部屋を作る</button><button data-act="join-mode" aria-pressed="${joining}">部屋に入る</button></nav>
+ <nav class="tabs"><button data-act="create-mode" aria-pressed="${mode==='create'}">部屋を作る</button><button data-act="join-mode" aria-pressed="${mode==='join'}">部屋に入る</button><button data-act="recover-mode" aria-pressed="${recovering}">再入室</button></nav>
+ ${recovering?`<section class="box"><h2>自分の部屋に戻る</h2>${recent.length?`<p class="hint">このブラウザで参加した部屋</p><div class="recent-rooms">${recent.map(x=>`<button data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>再入室</span></button>`).join('')}</div>`:'<p class="hint">このブラウザに保存された部屋はありません。</p>'}<p class="hint">別の端末からは、下に表示名と部屋の合言葉を入力してください。</p></section>`:''}
  <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" autocomplete="off"></label>
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
+ ${joining?'<p class="hint">同じ表示名と部屋の合言葉で、元の参加者として戻れます。</p>':''}
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <label>質問の進め方<select name="questionMode" id="question-mode"><option value="timer">制限時間（1分）</option><option value="chat">チャットで質問</option></select></label>
  <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親が嘘をつけるのは、子全員の質問総数の3分の1を切り上げた回数です。</small></label>`}
- <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
+ <button class="primary">${recovering?'再入室する':joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
  <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
 }
 async function api(action,fields={},code=roomCode,credential=token){
@@ -53,7 +84,7 @@ function draw(data){
  }
  const nextKey=data.code+'/'+data.round+'/'+data.stage;
  if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
- room=data;roomCode=data.code;
+ room=data;roomCode=data.code;rememberRoom(data);
  try{const url=new URL(location.href);url.searchParams.set('room',roomCode);history.replaceState(null,'',url);}catch{}
  renderRoom();
 }
@@ -99,6 +130,7 @@ function renderRoom(){
   return;
  }
  let html=`<div class="row"><strong class="name">${myName}さん</strong><span class="chip">${room.members.length}人</span></div>`;
+ if(storageWarning)html+='<p class="storage-warning" role="status">このブラウザに参加情報を保存できません。戻るときは表示名と部屋の合言葉を入力してください。</p>';
  if(room.stage==='lobby'){
   const players=room.members.map((m,i)=>`<li><span>${i+1}　${escapeHtml(m.name)}</span>${m.id===room.host?'<small>部屋の作成者</small>':''}</li>`).join('');
   html+=`<h1>待機室</h1><div class="box"><h2>部屋ID</h2><span class="code">${room.code}</span><p>招待リンクと、作成時に決めた合言葉を参加者に伝えてください。</p><button data-act="copy">招待リンクをコピー</button></div>
@@ -125,7 +157,7 @@ function renderRoom(){
   if(room.stage==='finished')html+='<div class="box"><h2>最終順位</h2>'+ranking()+'</div>';else html+=panel('rank','現在の順位',ranking());
   if(room.history.length)html+=panel('history','対戦履歴',room.history.slice().reverse().map(r=>`<h3>ラウンド ${r.number}</h3>${historyRows(r)}`).join(''));
  }
- html+=panel('invite','部屋情報と招待',`<p>部屋ID <span class="code">${room.code}</span></p><button data-act="copy">招待リンクをコピー</button><p class="hint">同じブラウザで招待リンクを開くと再接続できます。</p><button data-act="home">開始画面へ</button>`);
+ html+=panel('invite','部屋情報と招待',`<p>部屋ID <span class="code">${room.code}</span></p><button data-act="copy">招待リンクをコピー</button><p class="hint">「再入室」から表示名と合言葉でも戻れます。</p><button data-act="home">開始画面へ</button>`);
  const draftName=document.querySelector('#rename-name')?.value;
  screen.innerHTML=html;
  if(id==='rename-name'&&draftName!=null)document.querySelector('#rename-name').value=draftName;
@@ -141,7 +173,7 @@ async function refresh(){
  if(!room||busy||polling||document.hidden)return;
  const expected=room.code;polling=true;
  try{const data=await api('state');if(room?.code===expected&&!busy&&data.revision>room.revision)draw(data);document.querySelector('#sync').textContent='接続中';}
- catch(e){document.querySelector('#sync').textContent='再接続中';if([403,410,404].includes(e.status))say(e.message);}
+ catch(e){document.querySelector('#sync').textContent='再接続中';if(e.status===403)say('別の端末で再入室された可能性があります。開始画面から表示名と合言葉を入力してください。');else if([410,404].includes(e.status))say(e.message);}
  finally{polling=false;}
 }
 async function perform(fn){
@@ -158,9 +190,9 @@ screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.t
   if(asking)questionDraft='';else {answerDraft='';lieDraft=false;}draw(data);return;
  }
  const code=String(f.get('code')||'').replace(/[-\s]/g,'').toUpperCase();
- const candidate=(mode==='join'&&getValue(storageKey(code)))||newToken();
- const data=await api(mode,{name:f.get('name'),phrase:f.get('phrase'),settings:{initialPoints:Number(f.get('points')),stake:Number(f.get('stake')),turns:Number(f.get('turns')),questionMode:f.get('questionMode')||'timer',questionsPerPlayer:Number(f.get('questionsPerPlayer')||3)}},code,candidate);
- token=candidate;storeValue(storageKey(data.code),token);storeValue('keisu.displayName',f.get('name'));draw(data);
+ const candidate=newToken();
+ const data=await api(mode==='recover'?'rejoin':mode,{name:f.get('name'),phrase:f.get('phrase'),settings:{initialPoints:Number(f.get('points')),stake:Number(f.get('stake')),turns:Number(f.get('turns')),questionMode:f.get('questionMode')||'timer',questionsPerPlayer:Number(f.get('questionsPerPlayer')||3)}},code,candidate);
+ token=candidate;draw(data);
 });});
 screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]');if(!b||b.disabled||busy)return;
  const a=b.dataset.act;
@@ -169,6 +201,12 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
  if(a==='home'){room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
  perform(async()=>{
+  if(a==='resume'){
+   const code=b.dataset.code,credential=getValue(storageKey(code));
+   try{if(!/^[0-9a-f]{64}$/.test(credential))throw Error('表示名と部屋の合言葉を入力してください。');await restoreRoom(code,credential);}
+   catch(error){roomCode=code;const previous=recentRooms().find(x=>x.code===code);if(previous && previous.name!=='参加済み')savedName=previous.name;lobbyForm();throw error;}
+   return;
+  }
   if(a==='copy'){const link=new URL(location.href);link.searchParams.set('room',room.code);try{await navigator.clipboard.writeText(link.href);say('招待リンクをコピーしました。合言葉は別途伝えてください。');}catch{say(link.href);}return;}
   const payload={round:room.round};
   if(a==='secret')payload.number=chosen[0];
@@ -177,5 +215,5 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  });
 });
 lobbyForm();
-if(invite && getValue(storageKey(invite))){token=getValue(storageKey(invite));perform(async()=>draw(await api('state')));}
+if(invite && getValue(storageKey(invite))){const credential=getValue(storageKey(invite));perform(async()=>{try{await restoreRoom(invite,credential);}catch(error){mode='recover';lobbyForm();throw error;}});}
 setInterval(refresh,2000);setInterval(tick,250);document.addEventListener('visibilitychange',refresh);
