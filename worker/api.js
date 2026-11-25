@@ -145,21 +145,21 @@ export async function handleAPI(request, bucket) {
         const page=await bucket.list({prefix:'rooms/',limit:1000,...(cursor?{cursor}:{})});
         objects.push(...page.objects);cursor=page.truncated?page.cursor:null;
       } while(cursor);
-      const rooms=[];
+      const rooms=[],activeCodes=[];
       for(let i=0;i<objects.length;i+=20){
         const batch=await Promise.all(objects.slice(i,i+20).map(async item=>{
           const object=await bucket.get(item.key);if(!object)return null;
           const r=await object.json();
-          if(r.expires<=Date.now()||r.game||r.members.length>=10)return null;
+          if(r.expires<=Date.now())return null;
           const presence=await Promise.all(r.members.map(m=>bucket.get(`presence/${r.code}/${m.id}`)));
           const records=await Promise.all(presence.map(o=>o?o.json():null));
           const connected=records.filter((v,j)=>v && v.key===r.members[j].key && v.seen>Date.now()-90000).length;
-          return connected?{code:r.code,host:r.members[0].name,players:r.members.length,connected,expires:r.expires}:null;
+          return connected?{code:r.code,host:r.members[0].name,players:r.members.length,connected,expires:r.expires,open:!r.game&&r.members.length<10}:null;
         }));
-        rooms.push(...batch.filter(Boolean));
+        for(const room of batch.filter(Boolean)){activeCodes.push(room.code);if(room.open)rooms.push(room);}
       }
       rooms.sort((a,b)=>b.expires-a.expires);
-      return reply({rooms});
+      return reply({rooms,activeCodes});
     }
     if(b.action==='create'){
       const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings(b.settings);

@@ -46,12 +46,12 @@ async function restoreRoom(code,credential){
 function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
 function lobbyForm(){
- const joining=mode==='join', recent=recentRooms();
+ const joining=mode==='join';
  screen.innerHTML=`<section class="lobby-hero"><div><span class="hero-label">THE PREDICTION RACE</span><h1>数字を読め。<br>ウソを見ぬけ。</h1><p>2〜10人で楽しむ、数字と読み合いのゲーム。</p><span class="hero-badge">● オンライン対戦</span></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
  <h2 class="entry-title">合言葉で対戦</h2><p class="entry-copy">それぞれの端末から同じ部屋に集まろう。</p>
  <nav class="tabs"><button data-act="create-mode" aria-pressed="${mode==='create'}">部屋を作る</button><button data-act="join-mode" aria-pressed="${mode==='join'}">部屋に入る</button></nav>
  ${joining?`<section class="box"><div class="room-list-heading"><h2>参加できる部屋</h2><button type="button" data-act="refresh-rooms">更新</button></div><div id="available-rooms" aria-live="polite"><p class="hint">部屋を探しています…</p></div><p class="hint">部屋を選んで、合言葉を入力してください。</p></section>`:''}
- ${joining&&recent.length?`<section class="box"><h2>参加した部屋に戻る</h2><p class="hint">このブラウザで参加した部屋</p><div class="recent-rooms">${recent.map(x=>`<button data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>戻る</span></button>`).join('')}</div></section>`:''}
+ ${joining?'<div id="recent-rooms"></div>':''}
  <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" autocomplete="off"></label>
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
@@ -75,6 +75,8 @@ async function loadRooms(){
  try{
   const data=await api('list',{},'',newToken());
   if(request!==listRequest||!container.isConnected)return;
+  const recentContainer=document.querySelector('#recent-rooms'),active=new Set(data.activeCodes||[]),recent=recentRooms().filter(x=>active.has(x.code));
+  if(recentContainer)recentContainer.innerHTML=recent.length?`<section class="box"><h2>参加した部屋に戻る</h2><p class="hint">このブラウザで参加した部屋</p><div class="recent-rooms">${recent.map(x=>`<button type="button" data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>戻る</span></button>`).join('')}</div></section>`:'';
   container.innerHTML=data.rooms.length?`<div class="recent-rooms">${data.rooms.map(x=>`<button type="button" data-act="select-room" data-code="${escapeHtml(x.code)}"><b>${escapeHtml(x.host)}さんの部屋</b><small>部屋 ${escapeHtml(x.code)} ・ ${Number(x.players)} / 10人</small><span>選ぶ</span></button>`).join('')}</div>`:'<p class="hint">参加できる部屋はありません。</p>';
  }catch(error){if(request===listRequest&&container.isConnected)container.innerHTML='<p class="hint">部屋を読み込めませんでした。更新してください。</p>';}
 }
