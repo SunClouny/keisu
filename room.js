@@ -58,8 +58,8 @@ function lobbyForm(){
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
  ${joining?'<p class="hint">同じ表示名と部屋の合言葉で、元の参加者として戻れます。</p>':''}
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
- <label>質問の進め方<select name="questionMode" id="question-mode"><option value="timer">制限時間（1分）</option><option value="chat">チャットで質問</option></select></label>
- <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.5倍上がります（最大＋5倍）。</small></label>`}
+ <fieldset class="mode-choice"><legend>質問の進め方</legend><div class="mode-options"><label><input type="radio" name="questionMode" value="chat" checked><span>💬 チャットで質問</span></label><label><input type="radio" name="questionMode" value="timer"><span>⏱ 制限時間（1分）</span></label></div></fieldset>
+ <label id="question-count-label">質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" required><small class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.5倍上がります（最大＋5倍）。</small></label>`}
  <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
  <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
  if(joining)loadRooms();
@@ -237,7 +237,7 @@ async function perform(fn){
 }
 screen.addEventListener('toggle',e=>{const id=e.target.dataset.panel;if(id){if(e.target.open)savedDetails.add(id);else savedDetails.delete(id);}},true);
 screen.addEventListener('input',e=>{if(e.target.id==='room-bet')stake=e.target.value;if(e.target.name==='name'&&!room)savedName=e.target.value;if(e.target.id==='question-text')questionDraft=e.target.value;if(e.target.id==='answer-text')answerDraft=e.target.value;});
-screen.addEventListener('change',e=>{if(e.target.id==='question-mode'){const chat=e.target.value==='chat';document.querySelector('#question-count-label').hidden=!chat;document.querySelector('#question-count').disabled=!chat;}if(e.target.id==='answer-lie')lieDraft=e.target.checked;});
+screen.addEventListener('change',e=>{if(e.target.name==='questionMode'){const chat=e.target.value==='chat';document.querySelector('#question-count-label').hidden=!chat;document.querySelector('#question-count').disabled=!chat;}if(e.target.id==='answer-lie')lieDraft=e.target.checked;});
 screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);perform(async()=>{
  if(e.target.id==='rename'){draw(await api('rename',{name:f.get('name')}));return;}
  if(e.target.id==='question-form' || e.target.id==='answer-form'){
