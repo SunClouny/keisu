@@ -8,7 +8,7 @@ const invite = new URL(location.href).searchParams.get('room')?.toUpperCase();
 let mode=invite?'join':'create',room=null,token='',chosen=[],stake=10,busy=false,polling=false;
 let savedName='', viewKey='', savedDetails=new Set(),roomCode=invite||'';
 let questionDraft='', answerDraft='', lieDraft=false;
-let storageWarning=false;
+let storageWarning=false, lastPresence=0, presencePending=false, listRequest=0;
 let revealingKey=null, revealTimer=null;
 const revealedRounds=new Set();
 const storageKey=code=>'keisu.participant.'+code;
@@ -46,11 +46,12 @@ async function restoreRoom(code,credential){
 function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
 function lobbyForm(){
- const recovering=mode==='recover', joining=mode==='join'||recovering, recent=recentRooms();
+ const joining=mode==='join', recent=recentRooms();
  screen.innerHTML=`<section class="lobby-hero"><div><span class="hero-label">THE PREDICTION RACE</span><h1>数字を読め。<br>ウソを見ぬけ。</h1><p>2〜10人で楽しむ、数字と読み合いのゲーム。</p><span class="hero-badge">● オンライン対戦</span></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
  <h2 class="entry-title">合言葉で対戦</h2><p class="entry-copy">それぞれの端末から同じ部屋に集まろう。</p>
- <nav class="tabs"><button data-act="create-mode" aria-pressed="${mode==='create'}">部屋を作る</button><button data-act="join-mode" aria-pressed="${mode==='join'}">部屋に入る</button><button data-act="recover-mode" aria-pressed="${recovering}">再入室</button></nav>
- ${recovering?`<section class="box"><h2>自分の部屋に戻る</h2>${recent.length?`<p class="hint">このブラウザで参加した部屋</p><div class="recent-rooms">${recent.map(x=>`<button data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>再入室</span></button>`).join('')}</div>`:'<p class="hint">このブラウザに保存された部屋はありません。</p>'}<p class="hint">別の端末からは、下に表示名と部屋の合言葉を入力してください。</p></section>`:''}
+ <nav class="tabs"><button data-act="create-mode" aria-pressed="${mode==='create'}">部屋を作る</button><button data-act="join-mode" aria-pressed="${mode==='join'}">部屋に入る</button></nav>
+ ${joining?`<section class="box"><div class="room-list-heading"><h2>参加できる部屋</h2><button type="button" data-act="refresh-rooms">更新</button></div><div id="available-rooms" aria-live="polite"><p class="hint">部屋を探しています…</p></div><p class="hint">部屋を選んで、合言葉を入力してください。</p></section>`:''}
+ ${joining&&recent.length?`<section class="box"><h2>参加した部屋に戻る</h2><p class="hint">このブラウザで参加した部屋</p><div class="recent-rooms">${recent.map(x=>`<button data-act="resume" data-code="${x.code}"><b>${escapeHtml(x.name)}</b><small>部屋 ${x.code}</small><span>戻る</span></button>`).join('')}</div></section>`:''}
  <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" autocomplete="off"></label>
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
@@ -58,14 +59,34 @@ function lobbyForm(){
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <label>質問の進め方<select name="questionMode" id="question-mode"><option value="timer">制限時間（1分）</option><option value="chat">チャットで質問</option></select></label>
  <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親が嘘をつけるのは、子全員の質問総数の3分の1を切り上げた回数です。</small></label>`}
- <button class="primary">${recovering?'再入室する':joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
+ <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
  <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
+ if(joining)loadRooms();
 }
 async function api(action,fields={},code=roomCode,credential=token){
  const response=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+credential},body:JSON.stringify({action,code,...fields}),cache:'no-store',signal:AbortSignal.timeout(15000)});
  const text=await response.text();let data;try{data=JSON.parse(text);}catch{throw Error('部屋サーバーに接続できません。少し待って再試行してください。');}
  if(!response.ok){const err=Error(data.error||'通信に失敗しました。');err.status=response.status;throw err;}
  return data;
+}
+async function loadRooms(){
+ const container=document.querySelector('#available-rooms');if(!container)return;
+ const request=++listRequest;
+ try{
+  const data=await api('list',{},'',newToken());
+  if(request!==listRequest||!container.isConnected)return;
+  container.innerHTML=data.rooms.length?`<div class="recent-rooms">${data.rooms.map(x=>`<button type="button" data-act="select-room" data-code="${escapeHtml(x.code)}"><b>${escapeHtml(x.host)}さんの部屋</b><small>部屋 ${escapeHtml(x.code)} ・ ${Number(x.players)} / 10人</small><span>選ぶ</span></button>`).join('')}</div>`:'<p class="hint">参加できる部屋はありません。</p>';
+ }catch(error){if(request===listRequest&&container.isConnected)container.innerHTML='<p class="hint">部屋を読み込めませんでした。更新してください。</p>';}
+}
+function heartbeat(force=false){
+ if(!room||!token||presencePending||(!force&&Date.now()-lastPresence<20000))return;
+ presencePending=true;lastPresence=Date.now();
+ api('presence').catch(()=>{lastPresence=0;}).finally(()=>{presencePending=false;});
+}
+function leavePresence(){
+ if(!room||!token)return;
+ fetch(API,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({action:'leave',code:room.code}),keepalive:true}).catch(()=>{});
+ lastPresence=0;
 }
 function draw(data){
  if(room && data.code===room.code && data.revision<room.revision)return;
@@ -84,7 +105,7 @@ function draw(data){
  }
  const nextKey=data.code+'/'+data.round+'/'+data.stage;
  if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
- room=data;roomCode=data.code;rememberRoom(data);
+ room=data;roomCode=data.code;rememberRoom(data);heartbeat();
  try{const url=new URL(location.href);url.searchParams.set('room',roomCode);history.replaceState(null,'',url);}catch{}
  renderRoom();
 }
@@ -157,7 +178,7 @@ function renderRoom(){
   if(room.stage==='finished')html+='<div class="box"><h2>最終順位</h2>'+ranking()+'</div>';else html+=panel('rank','現在の順位',ranking());
   if(room.history.length)html+=panel('history','対戦履歴',room.history.slice().reverse().map(r=>`<h3>ラウンド ${r.number}</h3>${historyRows(r)}`).join(''));
  }
- html+=panel('invite','部屋情報と招待',`<p>部屋ID <span class="code">${room.code}</span></p><button data-act="copy">招待リンクをコピー</button><p class="hint">「再入室」から表示名と合言葉でも戻れます。</p><button data-act="home">開始画面へ</button>`);
+ html+=panel('invite','部屋情報と招待',`<p>部屋ID <span class="code">${room.code}</span></p><button data-act="copy">招待リンクをコピー</button><p class="hint">「部屋に入る」から同じ表示名と合言葉でも戻れます。</p><button data-act="home">開始画面へ</button>`);
  const draftName=document.querySelector('#rename-name')?.value;
  screen.innerHTML=html;
  if(id==='rename-name'&&draftName!=null)document.querySelector('#rename-name').value=draftName;
@@ -191,15 +212,17 @@ screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.t
  }
  const code=String(f.get('code')||'').replace(/[-\s]/g,'').toUpperCase();
  const candidate=newToken();
- const data=await api(mode==='recover'?'rejoin':mode,{name:f.get('name'),phrase:f.get('phrase'),settings:{initialPoints:Number(f.get('points')),stake:Number(f.get('stake')),turns:Number(f.get('turns')),questionMode:f.get('questionMode')||'timer',questionsPerPlayer:Number(f.get('questionsPerPlayer')||3)}},code,candidate);
+ const data=await api(mode,{name:f.get('name'),phrase:f.get('phrase'),settings:{initialPoints:Number(f.get('points')),stake:Number(f.get('stake')),turns:Number(f.get('turns')),questionMode:f.get('questionMode')||'timer',questionsPerPlayer:Number(f.get('questionsPerPlayer')||3)}},code,candidate);
  token=candidate;draw(data);
 });});
 screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]');if(!b||b.disabled||busy)return;
  const a=b.dataset.act;
+ if(a==='refresh-rooms'){loadRooms();return;}
+ if(a==='select-room'){roomCode=b.dataset.code;const field=document.querySelector('#entry input[name="code"]');if(field)field.value=roomCode;document.querySelector('#entry input[name="phrase"]')?.focus();return;}
  if(a==='reveal-skip'){clearTimeout(revealTimer);revealingKey=null;renderRoom();return;}
  if(a.endsWith('-mode')){mode=a.split('-')[0];say('');lobbyForm();return;}
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
- if(a==='home'){room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
+ if(a==='home'){leavePresence();room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
  perform(async()=>{
   if(a==='resume'){
    const code=b.dataset.code,credential=getValue(storageKey(code));
@@ -215,5 +238,5 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  });
 });
 lobbyForm();
-if(invite && getValue(storageKey(invite))){const credential=getValue(storageKey(invite));perform(async()=>{try{await restoreRoom(invite,credential);}catch(error){mode='recover';lobbyForm();throw error;}});}
-setInterval(refresh,2000);setInterval(tick,250);document.addEventListener('visibilitychange',refresh);
+if(invite && getValue(storageKey(invite))){const credential=getValue(storageKey(invite));perform(async()=>{try{await restoreRoom(invite,credential);}catch(error){mode='join';lobbyForm();throw error;}});}
+setInterval(refresh,2000);setInterval(tick,250);setInterval(()=>{if(room)heartbeat();else if(mode==='join'&&!document.hidden)loadRooms();},15000);document.addEventListener('visibilitychange',()=>{refresh();if(!document.hidden)heartbeat(true);});window.addEventListener('pagehide',leavePresence);window.addEventListener('pageshow',()=>heartbeat(true));

@@ -139,6 +139,28 @@ export async function handleAPI(request, bucket) {
     const token=(request.headers.get('Authorization')??'').replace(/^Bearer /,'');
     requireValue(/^[0-9a-f]{64}$/.test(token),'端末の参加情報を確認してください。',401);
     const key=await keyHash(token);
+    if(b.action==='list'){
+      let cursor,objects=[];
+      do {
+        const page=await bucket.list({prefix:'rooms/',limit:1000,...(cursor?{cursor}:{})});
+        objects.push(...page.objects);cursor=page.truncated?page.cursor:null;
+      } while(cursor);
+      const rooms=[];
+      for(let i=0;i<objects.length;i+=20){
+        const batch=await Promise.all(objects.slice(i,i+20).map(async item=>{
+          const object=await bucket.get(item.key);if(!object)return null;
+          const r=await object.json();
+          if(r.expires<=Date.now()||r.game||r.members.length>=10)return null;
+          const presence=await Promise.all(r.members.map(m=>bucket.get(`presence/${r.code}/${m.id}`)));
+          const records=await Promise.all(presence.map(o=>o?o.json():null));
+          const connected=records.filter((v,j)=>v && v.key===r.members[j].key && v.seen>Date.now()-90000).length;
+          return connected?{code:r.code,host:r.members[0].name,players:r.members.length,connected,expires:r.expires}:null;
+        }));
+        rooms.push(...batch.filter(Boolean));
+      }
+      rooms.sort((a,b)=>b.expires-a.expires);
+      return reply({rooms});
+    }
     if(b.action==='create'){
       const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings(b.settings);
       const code=Array.from(crypto.getRandomValues(new Uint8Array(12)),n=>alphabet[n%alphabet.length]).join('');
@@ -168,6 +190,15 @@ export async function handleAPI(request, bucket) {
         }
       } else {
         requireValue(member,'この端末から部屋に参加してください。',403);
+        if(b.action==='presence'){
+          await bucket.put(`presence/${room.code}/${member.id}`,JSON.stringify({key,seen:Date.now()}));
+          return reply({ok:true});
+        }
+        if(b.action==='leave'){
+          const presencePath=`presence/${room.code}/${member.id}`, previous=await bucket.get(presencePath);
+          if(previous){const record=await previous.json();if(record.key===key)await bucket.put(presencePath,JSON.stringify({key,seen:0}),{onlyIf:{etagMatches:previous.etag}});}
+          return reply({ok:true});
+        }
         if(b.action==='state')return reply(view(room,member.id));
         update(room,b.action,b,member);
       }
