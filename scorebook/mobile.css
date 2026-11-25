@@ -1,0 +1,109 @@
+.mobile-picker,
+.mobile-market-toggle { display: none; }
+
+@media (max-width: 600px) {
+  body { min-width: 0; -webkit-text-size-adjust: 100%; }
+  .container, .header-inner, .site-footer {
+    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(14px, env(safe-area-inset-right));
+  }
+  .site-footer { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  .site-header { padding-top: env(safe-area-inset-top); }
+  .page-intro .eyebrow, .intro-mark, .page-intro .mobile-only,
+  .timer-column .eyebrow, .game-heading .eyebrow, .timer-card > .subnote,
+  .site-footer > p, .start-button .icon, .round-actions .icon { display: none; }
+  .page-intro h1 { font-size: 1.5rem; margin: 0 0 5px; }
+  .page-intro p, .game-heading p, .subnote, .muted,
+  .participant-control p, .setup-card > .subnote, .session-summary p,
+  .market-panel > .subnote, .compact-odds .subnote, .timer-reset,
+  .round-parent small, .stage-steps li, .ranking-name span,
+  .ranking-points > span, .history-round summary > div span,
+  .setup-aside .rule-steps p, .fairness-note p, .data-footer > span,
+  .bet-header > .muted, .player-identity .muted, .bet-footer p > span,
+  .round-actions > .text-button, .completion-note { font-size: .8125rem; }
+  .settings-grid > label, .participant-control label, .section-title h2,
+  .player-identity h3, .ranking-name b, .bets-title p,
+  .round-parent b, .bet-footer p > span strong { font-size: .875rem; }
+  .settings-grid { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .settings-grid > label:last-child { grid-column: 1 / -1; }
+  .name-field input, .input-with-unit input, .settings-grid select, .mobile-picker select {
+    font-size: 1rem; min-height: 46px;
+  }
+  .name-field:focus-within, .input-with-unit:focus-within { outline: 2px solid #618847; }
+  .stepper button, .tools-menu > summary { width: 44px; height: 44px; }
+  .button, .button.small, .text-button, .bet-footer .button,
+  .round-actions > .button, .timer-card > .button, .timer-reset,
+  .dialog-actions .button, .archive-row .button { min-height: 44px; font-size: .875rem; }
+  .game-heading > div, .bets-column, .timer-column, .market-panel { min-width: 0; }
+  .game-heading { flex-wrap: wrap; }
+  .game-heading h1 { margin: 0; }
+  .round-parent b { overflow-wrap: anywhere; }
+  .score-strip { display: none; } /* 順位タブから全員の残高を確認できる。 */
+  .stage-steps { gap: 12px; margin: 16px 0; }
+  .stage-steps li { gap: 4px; }
+  .view-tabs { justify-content: space-around; gap: 6px; }
+  .view-tabs > button { font-size: .9375rem; padding-inline: 10px; }
+  .bets-title { align-items: center; }
+  .bets-title > div { min-width: 0; }
+  .bets-title .pill, .section-title .pill, .locked-badge { font-size: .75rem; }
+  .mobile-market-toggle { display: flex; width: 100%; margin-bottom: 12px; }
+  #round-market:not(.expanded) { display: none; }
+  .market-panel .market-grid, .history-detail .market-grid {
+    grid-template-columns: repeat(3,minmax(0,1fr)); gap: 7px;
+  }
+  .market-panel .market-item { padding: 9px 3px; }
+  .market-panel .market-base, .market-panel .market-people, .market-panel .market-people small,
+  .market-panel .market-item strong small { font-size: .75rem; margin-left: 0; }
+  .market-panel .market-people small { display: inline; }
+  .market-panel .market-item > strong { font-size: 1.125rem; }
+  .timer-card { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 4px 10px; padding: 14px; text-align: center; }
+  .timer-card h2 { grid-row: 1; grid-column: 1; justify-content: center; margin: 0; }
+  .timer-ring { grid-column: 1; grid-row: 2 / 4; width: auto; height: auto; margin: 0; background: none; }
+  .timer-ring > div { background: transparent; }
+  .timer-ring small { font-size: .75rem; margin: 0; }
+  .timer-card > .button { grid-column: 2; grid-row: 1 / 3; }
+  .timer-card .timer-reset { grid-column: 2; grid-row: 3; justify-content: center; }
+  .compact-odds summary { min-height: 44px; display: flex; align-items: center; font-size: .875rem; }
+  .compact-odds { padding-block: 0; }
+  .compact-odds[open] { padding-bottom: 12px; }
+  .mobile-picker { display: grid; gap: 6px; margin-bottom: 12px; font-size: .875rem; font-weight: 650; }
+  .mobile-picker select { width: 100%; border: 1px solid #a8b8a3; background-color: #fff; color: var(--ink); border-radius: 10px; padding-inline: 10px; }
+  .bet-card:not(.mobile-current) { display: none; }
+  .bet-numbers, .secret-grid { grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+  .bet-number, .secret-number { min-height: 54px; display: flex; justify-content: center; align-items: center; gap: 5px; padding: 8px 2px; }
+  .bet-number small, .secret-number span { font-size: .75rem; margin: 0; }
+  .bet-number.selected { border: 2px solid #5a783a; }
+  .bet-footer { flex-wrap: wrap; }
+  .settle-panel p, .settle-panel p small { font-size: .8125rem; }
+  .table-scroll { overflow: visible; }
+  .result-table, .result-table tbody { display: block; min-width: 0; width: 100%; }
+  .result-table thead { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
+  .result-table tbody tr {
+    display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px 12px;
+    padding: 16px 0; border-bottom: 1px solid var(--line);
+  }
+  .result-table tbody th, .result-table tbody td {
+    border: 0; padding: 0 !important; min-width: 0; max-width: none; font-size: .9375rem;
+  }
+  .result-table tbody th, .result-table td[data-label="予想"] { grid-column: 1 / -1; }
+  .result-table tbody td::before { content: attr(data-label); display: block; color: #526353; font-size: .75rem; margin-bottom: 2px; }
+  .result-table .pick-chip { font-size: .8125rem; width: 24px; }
+  .result-table .before-points, .result-table .hit-label { font-size: .75rem; }
+  .result-table .table-player { align-items: center; }
+  .round-actions { flex-wrap: wrap; }
+  .round-actions > .button, .round-actions > .text-button { max-width: 100%; }
+  .round-actions > .button { width: 100%; }
+  .round-actions > .text-button { order: 1; }
+}
+@media (max-width: 360px) {
+  .stage-steps { gap: 6px; }
+  .stage-steps li { font-size: .75rem; }
+  .name-grid { grid-template-columns: minmax(0,1fr); }
+}
+.horse-name { display:block; font:600 .875rem/1.4 inherit; font-family:inherit;font-size:.875rem;line-height:1.4;font-weight:600;font-style:normal;overflow-wrap:anywhere; }
+.secret-number,.bet-number { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px; }
+.market-item .horse-name {font-size:.8rem}
+.winning-number .horse-name {text-align:center;font-size:1rem;}
+.stake-input {display:flex;align-items:center;gap:8px;margin-top:12px;font-size:.9rem;font-weight:650;}
+.stake-input input {width:6rem;padding:6px 10px;font-size:1rem;min-height:44px;border:1px solid var(--line);border-radius:8px;}
+.room-entry {margin-bottom:16px;}

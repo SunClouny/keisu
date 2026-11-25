@@ -1,0 +1,124 @@
+import {createGame, validateSettings, totalRounds, parentAt, balances, market, calculateRound, standings, settle, advance, validNumbers} from './engine.js';
+
+const lifetime = 24 * 60 * 60 * 1000;
+const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+const encoder = new TextEncoder();
+function requireValue(test, message, status = 400) {
+  if (!test) throw Object.assign(new Error(message), {status});
+}
+const hex = bytes => Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+const keyHash = async text => hex(await crypto.subtle.digest('SHA-256', encoder.encode(text)));
+function cleanName(value) {
+  const name = typeof value === 'string' ? value.normalize('NFKC').trim() : '';
+  requireValue(name.length >= 1 && name.length <= 20 && !/[\u0000-\u001f\u007f]/.test(name), '表示名は1〜20文字で入力してください。');
+  return name;
+}
+function phrase(value) {
+  requireValue(typeof value === 'string', '合言葉を入力してください。');
+  const result = value.normalize('NFKC').trim();
+  requireValue(result.length >= 4 && result.length <= 64, '合言葉は4〜64文字で入力してください。');
+  return result;
+}
+async function phraseHash(value, salt) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(value), 'PBKDF2', false, ['deriveBits']);
+  return hex(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',iterations:50000,salt:encoder.encode(salt)},key,256));
+}
+function uniqueName(room, name, self) {
+  requireValue(!room.members.some(m => m.id !== self && m.name === name), 'その表示名は登録済みです。別の名前を入力してください。',409);
+}
+function view(room, self) {
+  const g=room.game, base={code:room.code, me:self, host:room.members[0].id, settings:room.settings,
+    revision:room.revision, expires:room.expires, members:room.members.map(({id,name})=>({id,name}))};
+  if (!g) return {...base, stage:'lobby'};
+  const current=g.draft, round=current?g.rounds.length:g.rounds.length-1;
+  const history=g.rounds.map(r=>({number:r.index+1,parent:r.parentId,answer:r.answer,names:r.names,odds:r.odds,...calculateRound(g,r)}));
+  return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
+    standings:standings(g), history, names:current?.names??g.rounds.at(-1)?.names, market:market(g,current?null:g.rounds.at(-1)), endsAt:room.endsAt,
+    confirmed:current?Object.keys(current.bets).filter(id=>current.bets[id].locked):[],
+    myBet:current?.bets[self]??null};
+}
+function update(room, action, b, member) {
+  const g=room.game, host=room.members[0].id===member.id;
+  if(action==='rename'){
+    requireValue(!g,'開始後は表示名を変更できません。',409);
+    const name=cleanName(b.name); uniqueName(room,name,member.id);member.name=name;return;
+  }
+  if(action==='start'){
+    requireValue(host,'部屋を作った人が開始してください。',403);
+    requireValue(!g&&room.members.length>=2,'2人以上の待機室で開始できます。',409);
+    room.game=createGame(room.members.map(m=>m.name),room.settings);return;
+  }
+  requireValue(g && Number.isInteger(b.round) && b.round===(g.draft?g.rounds.length:g.rounds.length-1),'画面を更新して現在のラウンドを確認してください。',409);
+  const parent=parentAt(g,b.round).id===member.id;
+  if(action==='secret'){
+    requireValue(parent && g.draft?.stage==='secret','今回の親だけが数字を確定できます。',403);
+    requireValue(Number.isInteger(b.number)&&b.number>=1&&b.number<=9,'1〜9の数字を選んでください。');
+    g.draft.secret=b.number;g.draft.stage='betting';room.endsAt=Date.now()+60000;return;
+  }
+  if(action==='bet'){
+    requireValue(!parent && g.draft?.stage==='betting','子の予想を受け付ける時間ではありません。',409);
+    const bet=g.draft.bets[member.id];
+    requireValue(!bet.locked,'予想は確定済みです。',409);
+    requireValue(Number.isInteger(b.stake)&&b.stake>=1&&b.stake<=1000,'BETは1〜1000点の整数です。');
+    bet.stake=b.stake;bet.numbers=validNumbers(b.numbers);bet.locked=true;
+    if(Object.values(g.draft.bets).every(x=>x.locked)){settle(g);room.endsAt=null;}
+    return;
+  }
+  if(action==='next'){
+    requireValue(parent||host,'親または部屋を作った人が進めてください。',403);
+    requireValue(!g.draft&&!g.completedAt,'今は次に進めません。',409);
+    advance(g);room.endsAt=null;return;
+  }
+  requireValue(false,'操作を確認してください。',404);
+}
+export async function handleAPI(request, bucket) {
+  const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Access-Control-Allow-Origin':'*',
+    'Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'POST, OPTIONS'};
+  const reply=(body,status=200)=>new Response(JSON.stringify(body),{headers,status});
+  if(request.method==='OPTIONS')return new Response(null,{headers,status:204});
+  try {
+    requireValue(request.method==='POST','POSTで送信してください。',405);
+    requireValue(request.headers.get('content-type')?.startsWith('application/json'),'JSONを送信してください。',415);
+    requireValue(Number(request.headers.get('content-length')??0)<16000,'入力内容が長すぎます。',413);
+    const raw=await request.text();requireValue(raw.length<3500,'入力内容が長すぎます。',413);
+    let b;try{b=JSON.parse(raw);}catch{requireValue(false,'入力形式が不正です。');}
+    requireValue(b && typeof b==='object','入力形式が不正です。');
+    const token=(request.headers.get('Authorization')??'').replace(/^Bearer /,'');
+    requireValue(/^[0-9a-f]{64}$/.test(token),'端末の参加情報を確認してください。',401);
+    const key=await keyHash(token);
+    if(b.action==='create'){
+      const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings(b.settings);
+      const code=Array.from(crypto.getRandomValues(new Uint8Array(12)),n=>alphabet[n%alphabet.length]).join('');
+      const salt=crypto.randomUUID(),room={code,salt,proof:await phraseHash(password,salt),settings,
+        members:[{id:'p1',name,key}],game:null,revision:1,expires:Date.now()+lifetime,endsAt:null};
+      const saved=await bucket.put('rooms/'+code,JSON.stringify(room),{onlyIf:{etagDoesNotMatch:'*'}});
+      requireValue(saved,'もう一度作成してください。',409);return reply(view(room,'p1'),201);
+    }
+    requireValue(typeof b.code==='string'&&/^[A-Z2-9]{12}$/.test(b.code),'部屋IDを確認してください。');
+    const path='rooms/'+b.code;
+    for(let attempt=0;attempt<8;attempt++){
+      const obj=await bucket.get(path);requireValue(obj,'部屋が見つかりません。',404);
+      const room=await obj.json();requireValue(room.expires>Date.now(),'この部屋の利用期限が終了しました。',410);
+      let member=room.members.find(m=>m.key===key);
+      if(b.action==='join'){
+        if(member)return reply(view(room,member.id));
+        requireValue(await phraseHash(phrase(b.phrase),room.salt)===room.proof,'合言葉が違います。',403);
+        requireValue(!room.game&&room.members.length<10,'対戦開始済み、または満室です。',409);
+        const name=cleanName(b.name);uniqueName(room,name,null);
+        member={id:'p'+(room.members.length+1),name,key};room.members.push(member);
+      } else {
+        requireValue(member,'この端末から部屋に参加してください。',403);
+        if(b.action==='state')return reply(view(room,member.id));
+        update(room,b.action,b,member);
+      }
+      room.revision++;
+      const saved=await bucket.put(path,JSON.stringify(room),{onlyIf:{etagMatches:obj.etag}});
+      if(saved)return reply(view(room,member.id));
+    }
+    return reply({error:'操作が重なりました。もう一度お試しください。'},409);
+  } catch(error){
+    const inputError = /予想|BET|数字|初期ポイント|親の回数|設定/.test(error.message);
+    const status = error.status ?? (inputError ? 400 : 500);
+    return reply({error: status < 500 ? error.message : '接続を確認して、もう一度お試しください。'}, status);
+  }
+}
