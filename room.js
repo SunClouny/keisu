@@ -18,7 +18,7 @@ function lobbyForm(){
  const joining=mode==='join';
  screen.innerHTML=`<h1>合言葉で対戦</h1><p>2〜10人。それぞれの端末で同じ部屋に参加します。</p>
  <nav class="tabs"><button data-act="create-mode" aria-pressed="${!joining}">部屋を作る</button><button data-act="join-mode" aria-pressed="${joining}">部屋に入る</button></nav>
- <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" placeholder="例：ゆうすけ" autocomplete="off"></label>
+ <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" autocomplete="off"></label>
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="1" required></label></div>
@@ -137,7 +137,7 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  const a=b.dataset.act;
  if(a.endsWith('-mode')){mode=a.split('-')[0];say('');lobbyForm();return;}
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
- if(a==='home'){room=null;token='';chosen=[];viewKey='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
+ if(a==='home'){room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
  perform(async()=>{
   if(a==='copy'){const link=new URL(location.href);link.searchParams.set('room',room.code);try{await navigator.clipboard.writeText(link.href);say('招待リンクをコピーしました。合言葉は別途伝えてください。');}catch{say(link.href);}return;}
   const payload={round:room.round};
@@ -146,6 +146,6 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
   draw(await api(a,payload));
  });
 });
-savedName=getValue('keisu.displayName');lobbyForm();
+lobbyForm();
 if(invite && getValue(storageKey(invite))){token=getValue(storageKey(invite));perform(async()=>draw(await api('state')));}
 setInterval(refresh,2000);setInterval(tick,250);document.addEventListener('visibilitychange',refresh);
