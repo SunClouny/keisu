@@ -8,6 +8,8 @@ const invite = new URL(location.href).searchParams.get('room')?.toUpperCase();
 let mode=invite?'join':'create',room=null,token='',chosen=[],stake=10,busy=false,polling=false;
 let savedName='', viewKey='', savedDetails=new Set(),roomCode=invite||'';
 let questionDraft='', answerDraft='', lieDraft=false;
+let revealingKey=null, revealTimer=null;
+const revealedRounds=new Set();
 const storageKey=code=>'keisu.participant.'+code;
 function newToken(){return [...crypto.getRandomValues(new Uint8Array(32))].map(n=>n.toString(16).padStart(2,'0')).join('');}
 function storeValue(key,value){try{localStorage.setItem(key,value);}catch{}}
@@ -16,7 +18,8 @@ function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
 function lobbyForm(){
  const joining=mode==='join';
- screen.innerHTML=`<h1>合言葉で対戦</h1><p>2〜10人。それぞれの端末で同じ部屋に参加します。</p>
+ screen.innerHTML=`<section class="lobby-hero"><div><span class="hero-label">THE PREDICTION RACE</span><h1>数字を読め。<br>ウソを見ぬけ。</h1><p>2〜10人で楽しむ、数字と読み合いのゲーム。</p><span class="hero-badge">● オンライン対戦</span></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
+ <h2 class="entry-title">合言葉で対戦</h2><p class="entry-copy">それぞれの端末から同じ部屋に集まろう。</p>
  <nav class="tabs"><button data-act="create-mode" aria-pressed="${!joining}">部屋を作る</button><button data-act="join-mode" aria-pressed="${joining}">部屋に入る</button></nav>
  <form class="box form" id="entry"><label>あなたの表示名<input required maxlength="20" name="name" value="${escapeHtml(savedName)}" autocomplete="off"></label>
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
@@ -35,6 +38,19 @@ async function api(action,fields={},code=roomCode,credential=token){
 }
 function draw(data){
  if(room && data.code===room.code && data.revision<room.revision)return;
+ const resultKey=data.code+':'+data.round;
+ const isResult=data.stage==='result'||data.stage==='finished';
+ if(revealingKey && (revealingKey!==resultKey || !isResult)){clearTimeout(revealTimer);revealingKey=null;}
+ if(isResult && !revealedRounds.has(resultKey)){
+  let seen=false;try{seen=sessionStorage.getItem('keisu.reveal.'+resultKey)==='1';}catch{}
+  revealedRounds.add(resultKey);
+  if(!seen){
+   try{sessionStorage.setItem('keisu.reveal.'+resultKey,'1');}catch{}
+   revealingKey=resultKey;
+   const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches?200:3800;
+   revealTimer=setTimeout(()=>{if(revealingKey===resultKey){revealingKey=null;renderRoom();}},duration);
+  }
+ }
  const nextKey=data.code+'/'+data.round+'/'+data.stage;
  if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
  room=data;roomCode=data.code;
@@ -45,11 +61,11 @@ function horses(interactive){
  const locked=room.myBet?.locked;
  return '<div class="grid">'+room.market.map((m,i)=>{
   const picked=locked?room.myBet.numbers.includes(m.number):chosen.includes(m.number);
-  return `<button class="horse" data-act="pick" data-number="${m.number}" aria-pressed="${picked}" ${interactive&&!locked?'':'disabled'}><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍 · ${m.people}人</small></button>`;
+  return `<button class="horse" data-act="pick" data-number="${m.number}" aria-pressed="${picked}" ${interactive&&!locked?'':'disabled'}><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>基本 ${format(m.base)}倍</small></button>`;
  }).join('')+'</div>';
 }
 function questionOptions(){
- return `<section class="box question-options"><h2>質問の選択肢</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
+ return `<section class="box question-options"><h2>質問の出走表</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
 }
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
@@ -77,6 +93,11 @@ function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
  const isHost=room.me===room.host,parent=room.me===room.parent;
  const myName=escapeHtml(memberName(room.me)),parentName=escapeHtml(memberName(room.parent));
+ if(revealingKey===room.code+':'+room.round && (room.stage==='result'||room.stage==='finished')){
+  const result=room.history.at(-1);
+  screen.innerHTML=`<section class="reveal-stage" aria-live="polite"><span class="reveal-eyebrow">RESULT TIME</span><h1>結果発表！</h1><p>運命の数字は……</p><div class="reveal-card"><span class="reveal-question" aria-hidden="true">?</span><strong class="reveal-number">${result.answer}</strong></div><p class="reveal-name">${escapeHtml(result.names?.[result.answer-1]??'')}</p><button data-act="reveal-skip">結果を見る</button></section>`;
+  return;
+ }
  let html=`<div class="row"><strong class="name">${myName}さん</strong><span class="chip">${room.members.length}人</span></div>`;
  if(room.stage==='lobby'){
   const players=room.members.map((m,i)=>`<li><span>${i+1}　${escapeHtml(m.name)}</span>${m.id===room.host?'<small>部屋の作成者</small>':''}</li>`).join('');
@@ -93,7 +114,7 @@ function renderRoom(){
    const chatting=room.settings.questionMode==='chat', ready=!chatting||room.chat?.complete;
    html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
-   <div class="box"><h2>${parent?'現在のオッズ':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2>${horses(!parent)}
+   <div class="box"><h2>${parent?'基本オッズ':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">全員の予想が確定した後、予想人数を反映したオッズを公開します。</p>${horses(!parent)}
    ${parent?'':`<label>BET（1〜1,000点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="1000" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>的中時は BET × 基本オッズ ÷ 自分の予想数 ÷ その数字の予想人数。端数は切り捨てます。</small>`}</div>
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
    if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想とBETを確定</button></div>';
@@ -143,6 +164,7 @@ screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.t
 });});
 screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]');if(!b||b.disabled||busy)return;
  const a=b.dataset.act;
+ if(a==='reveal-skip'){clearTimeout(revealTimer);revealingKey=null;renderRoom();return;}
  if(a.endsWith('-mode')){mode=a.split('-')[0];say('');lobbyForm();return;}
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
  if(a==='home'){room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}

@@ -57,7 +57,8 @@ function view(room, self) {
     ...(self===parent && current ? {liesUsed:room.chat.entries.filter(q=>q.isLie===true).length} : {})
   } : null;
   return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
-    standings:standings(g), history, names:current?.names??g.rounds.at(-1)?.names, market:market(g,current?null:g.rounds.at(-1)), endsAt:room.endsAt,
+    standings:standings(g), history, names:current?.names??g.rounds.at(-1)?.names,
+    market:current?market(g).map(m=>({...m,people:0,adjusted:m.base})):market(g,g.rounds.at(-1)), endsAt:room.endsAt,
     confirmed:current?Object.keys(current.bets).filter(id=>current.bets[id].locked):[],
     myBet:current?.bets[self]??null,
     chat};

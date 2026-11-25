@@ -65,6 +65,17 @@ function confirmAction(title, description, label, action) {
   dialog.showModal();
 }
 function focusMain() { requestAnimationFrame(()=>{const heading=document.querySelector('main h1');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}window.scrollTo({top:0,behavior:'instant'});}); }
+function showResultReveal(round) {
+  const dialog=document.createElement('dialog');dialog.className='result-reveal-dialog';
+  dialog.setAttribute('aria-label','結果発表');
+  dialog.innerHTML=`<div class="result-reveal"><span class="reveal-eyebrow">RESULT TIME</span><h2>結果発表！</h2><p>運命の数字は……</p><div class="reveal-card"><span class="reveal-question" aria-hidden="true">?</span><strong class="reveal-number">${round.answer}</strong></div><p class="reveal-name">${esc(round.names?.[round.answer-1]??'')}</p><button class="button secondary" type="button">結果を見る</button></div>`;
+  document.body.append(dialog);
+  const delay=window.matchMedia('(prefers-reduced-motion: reduce)').matches?200:3800;
+  const timer=setTimeout(()=>dialog.close(),delay);
+  dialog.querySelector('button').addEventListener('click',()=>dialog.close());
+  dialog.addEventListener('close',()=>{clearTimeout(timer);dialog.remove();focusMain();},{once:true});
+  dialog.showModal();
+}
 function download(contents, name, type) {
   const url=URL.createObjectURL(new Blob([contents],{type}));
   const link=document.createElement('a');link.href=url;link.download=name;document.body.append(link);link.click();link.remove();
@@ -73,7 +84,7 @@ function download(contents, name, type) {
 function backup() { download(JSON.stringify(pack(),null,2),`keisu-backup-${new Date().toISOString().slice(0,10)}.json`,'application/json');toast('バックアップを書き出しました。ファイルを保存してください。'); }
 
 function header() {
-  return `<header class="site-header"><div class="header-inner"><button class="brand" data-action="home" aria-label="競数 ホーム"><span class="brand-icon">${icon('flag')}</span><span>競数<small>KEISU SCOREBOOK</small></span></button><div class="header-right"><span class="autosave"><i></i><span id="save-label">この端末に自動保存</span></span><details class="tools-menu"><summary aria-label="データ管理メニュー">${icon('dots')}</summary><div class="menu-content"><button data-action="export">${icon('down')}JSONバックアップ</button><button data-action="import">${icon('up')}JSONから復元</button>${state.game?`<button data-action="csv">${icon('book')}履歴をCSV出力</button><button data-action="new">${icon('plus')}新しい対戦</button>`:''}</div></details></div></div></header>`;
+  return `<header class="site-header"><div class="header-inner"><button class="brand" data-action="home" aria-label="数読みダービー ホーム"><span class="brand-icon">${icon('flag')}</span><span>数読みダービー<small>KAZUYOMI DERBY</small></span></button><div class="header-right"><span class="autosave"><i></i><span id="save-label">この端末に自動保存</span></span><details class="tools-menu"><summary aria-label="データ管理メニュー">${icon('dots')}</summary><div class="menu-content"><button data-action="export">${icon('down')}JSONバックアップ</button><button data-action="import">${icon('up')}JSONから復元</button>${state.game?`<button data-action="csv">${icon('book')}履歴をCSV出力</button><button data-action="new">${icon('plus')}新しい対戦</button>`:''}</div></details></div></div></header>`;
 }
 function nav() {
   if(!state.game) return '';
@@ -85,8 +96,8 @@ function oddsTable(odds=ODDS, pool=false) {
 function marketPanel(round=null) {
   const g=state.game;
   if(g.rulesVersion!==2)return '';
-  const entries=market(g,round);
-  return `<section class="card market-panel" aria-label="数字ごとの人気とオッズ"><div class="section-title"><h2>${round?'確定したオッズ':'今回のオッズと人気'}</h2><span class="pill">${round?'このラウンドの記録':'予想人数で変動'}</span></div><div class="market-grid">${entries.map(m=>`<div class="market-item ${m.people>1?'popular':''}"><b>${m.number}</b><em class="horse-name">${esc((round??g.draft)?.names?.[m.number-1]??'')}</em><span class="market-base">基本 ${m.base}倍</span><strong>${fmtOdds(m.adjusted)}<small>倍</small></strong><span class="market-people">${m.people}<small>人予想</small></span></div>`).join('')}</div><p class="subnote">表示倍率は基本オッズ ÷ 予想人数（0人は1人扱い）の目安です。受取額はさらに自分の予想数で割り、最後に端数を切り捨てます。${round?'':'全員の予想確定後に配当が決まります。'}</p></section>`;
+  const entries=round?market(g,round):market(g).map(m=>({...m,people:0,adjusted:m.base}));
+  return `<section class="card market-panel" aria-label="数字ごとの人気とオッズ"><div class="section-title"><h2>${round?'確定したオッズ':'今回の基本オッズ'}</h2><span class="pill">${round?'このラウンドの記録':'精算時に確定'}</span></div><div class="market-grid">${entries.map(m=>`<div class="market-item ${m.people>1?'popular':''}"><b>${m.number}</b><em class="horse-name">${esc((round??g.draft)?.names?.[m.number-1]??'')}</em><span class="market-base">基本 ${m.base}倍</span><strong>${fmtOdds(m.adjusted)}<small>倍</small></strong><span class="market-people">${round?`${m.people}<small>人予想</small>`:'確定後に公開'}</span></div>`).join('')}</div><p class="subnote">${round?'表示倍率は基本オッズ ÷ 予想人数（0人は1人扱い）の目安です。':'予想中は基本オッズを表示し、精算後に確定オッズと予想人数を公開します。'}受取額はさらに自分の予想数で割り、最後に端数を切り捨てます。</p></section>`;
 }
 function archiveList() {
   if(!state.archives.length) return '';
@@ -126,11 +137,11 @@ function timerCard() {
   return `<aside class="timer-column"><section class="card timer-card"><span class="eyebrow">QUESTION TIME</span><h2>${icon('clock')}質問タイマー</h2><div class="timer-ring" id="timer-ring"><div><span id="timer-display" role="timer" aria-label="残り時間">01:00</span><small id="timer-status">準備ができたら開始</small></div></div><button class="button primary wide" data-action="timer-toggle" id="timer-toggle">${t.status==='running'?'一時停止':t.status==='paused'?'再開':t.status==='finished'?'もう一度1分計る':'1分タイマーを開始'}</button><button class="text-button timer-reset" data-action="timer-reset">タイマーをリセット</button><p class="subnote">時間終了後も予想の記録はできます。全員の予想を確定してから精算してください。</p></section><details class="card compact-odds"><summary>配当の計算方法</summary><p class="subnote formula-help">BET × 抽選した基本オッズ ÷ 自分の予想数 ÷ 的中数字の予想人数。<br>例：10点 × 20倍 ÷ 2個 ÷ 3人 ＝ 33点。<br>小数点以下は最後に切り捨てます。</p></details></aside>`;
 }
 function bettingCard(player, points) {
-  const g=state.game,bet=g.draft.bets[player.id],count=bet.numbers.length,odds=roundOdds(g),entries=market(g);
+  const g=state.game,bet=g.draft.bets[player.id],count=bet.numbers.length,odds=roundOdds(g),entries=market(g).map(m=>({...m,people:0,adjusted:m.base}));
   const stake=bet.stake ?? g.settings.stake;
   const amounts=bet.numbers.map(n=>payout(stake,n,count,odds,g.rulesVersion===2?Math.max(1,entries[n-1].people):1));
   const range=count?(Math.min(...amounts)===Math.max(...amounts)?`${money(amounts[0])}点`:`${money(Math.min(...amounts))}〜${money(Math.max(...amounts))}点`):'—';
-  return `<section class="card bet-card ${player.id===selectedBettor?'mobile-current':''} ${bet.locked?'locked':''}" aria-label="${esc(player.name)}さんの予想"><div class="bet-header"><div class="player-identity">${avatar(player)}<div><h3>${esc(player.name)}</h3><span class="muted">現在 ${money(points[player.id])}点</span></div></div><span class="${bet.locked?'locked-badge':'muted'}">${bet.locked?`${icon('check')}確定済み`:`BET ${stake}点`}</span></div><div class="bet-numbers">${odds.map((base,i)=>`<button class="bet-number ${bet.numbers.includes(i+1)?'selected':''}" data-action="bet-number" data-player="${player.id}" data-number="${i+1}" aria-label="${esc(player.name)}さん ${i+1} 基本${base}倍" aria-pressed="${bet.numbers.includes(i+1)}" ${bet.locked?'disabled':''}><b>${i+1}</b><em class="horse-name">${esc(g.draft.names?.[i]??'')}</em><small>${fmtOdds(entries[i].adjusted)}倍</small></button>`).join('')}</div><label class="stake-input">BET <input type="number" inputmode="numeric" min="1" max="1000" step="1" data-individual-stake="${player.id}" value="${stake}" ${bet.locked?'disabled':''}> 点</label><div class="bet-footer"><p><b>${count}<small>個選択</small></b><span>的中時の受取 <strong>${range}</strong></span></p><button class="button ${bet.locked?'secondary':'primary'} small" data-action="${bet.locked?'unlock-bet':'lock-bet'}" data-player="${player.id}" ${!count?'disabled':''}>${bet.locked?'修正する':'予想を確定'}</button></div></section>`;
+  return `<section class="card bet-card ${player.id===selectedBettor?'mobile-current':''} ${bet.locked?'locked':''}" aria-label="${esc(player.name)}さんの予想"><div class="bet-header"><div class="player-identity">${avatar(player)}<div><h3>${esc(player.name)}</h3><span class="muted">現在 ${money(points[player.id])}点</span></div></div><span class="${bet.locked?'locked-badge':'muted'}">${bet.locked?`${icon('check')}確定済み`:`BET ${stake}点`}</span></div><div class="bet-numbers">${odds.map((base,i)=>`<button class="bet-number ${bet.numbers.includes(i+1)?'selected':''}" data-action="bet-number" data-player="${player.id}" data-number="${i+1}" aria-label="${esc(player.name)}さん ${i+1} 基本${base}倍" aria-pressed="${bet.numbers.includes(i+1)}" ${bet.locked?'disabled':''}><b>${i+1}</b><em class="horse-name">${esc(g.draft.names?.[i]??'')}</em><small>${fmtOdds(entries[i].adjusted)}倍</small></button>`).join('')}</div><label class="stake-input">BET <input type="number" inputmode="numeric" min="1" max="1000" step="1" data-individual-stake="${player.id}" value="${stake}" ${bet.locked?'disabled':''}> 点</label><div class="bet-footer"><p><b>${count}<small>個選択</small></b><span>的中時の受取（人気反映前） <strong>${range}</strong></span></p><button class="button ${bet.locked?'secondary':'primary'} small" data-action="${bet.locked?'unlock-bet':'lock-bet'}" data-player="${player.id}" ${!count?'disabled':''}>${bet.locked?'修正する':'予想を確定'}</button></div></section>`;
 }
 let selectedBettor = null;
 let expandedMarket = false;
@@ -184,7 +195,7 @@ function historyPage() {
   }).join('')}</div><div class="history-actions"><button class="text-button" data-action="undo">${icon('undo')}直前の精算を取り消す</button><button class="text-button" data-action="export">${icon('down')}全データをJSON保存</button></div>`}${archiveList()}</main>`;
 }
 function render() {
-  app.innerHTML=header()+nav()+(state.game?(state.view==='ranking'?rankingPage():state.view==='history'?historyPage():gamePage()):setupPage())+`<footer class="site-footer"><span>競数 <small>KEISU SCOREBOOK</small></span><p>読み合いを楽しむ、1〜9の数字ゲーム。</p></footer>`;
+  app.innerHTML=header()+nav()+(state.game?(state.view==='ranking'?rankingPage():state.view==='history'?historyPage():gamePage()):setupPage())+`<footer class="site-footer"><span>数読みダービー <small>KAZUYOMI DERBY</small></span><p>読み合いを楽しむ、1〜9の数字ゲーム。</p></footer>`;
   updateSaveLabel();updateTimer();
 }
 function updateSetupSummary() {
@@ -312,7 +323,7 @@ app.addEventListener('click',event=>{
         save();updateTimer();break;
       }
       case 'timer-reset':g.draft.timer={remainingMs:60000,endsAt:null,status:'idle'};lastBeep='';save();updateTimer();break;
-      case 'settle':settle(g);save();render();focusMain();toast('配当を計算し、全員のポイントを記録しました。');break;
+      case 'settle':settle(g);save();render();showResultReveal(g.rounds.at(-1));toast('配当を計算し、全員のポイントを記録しました。');break;
       case 'next':advance(g);save();render();focusMain();break;
       case 'tab':state.view=button.dataset.view;render();focusMain();break;
       case 'final-ranking':state.view='ranking';render();focusMain();break;
