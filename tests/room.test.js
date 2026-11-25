@@ -14,7 +14,7 @@ test('private choices, simultaneous individual BETs, settlement and rotating par
     const req=new Request('https://example.invalid/api/rooms',{method:'POST',headers:{'content-type':'application/json',Authorization:'Bearer '+id.repeat(64)},body:JSON.stringify({action,code,...fields})});
     const res=await handleAPI(req,bucket),data=await res.json();assert.equal(res.status,status,JSON.stringify(data));return data;
   }
-  assert.equal(new Set(NOUNS).size,1000);
+  assert.equal(new Set(NOUNS).size,587);
   const pass='試験競数', settings={initialPoints:300,stake:10,turns:1};
   code=(await call('a','create',{name:'親役',phrase:pass,settings},201)).code;
   await call('b','join',{name:'子一',phrase:'異なる合言葉'},403);

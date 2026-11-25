@@ -1,4 +1,4 @@
-import {NOUNS, drawNames} from './nouns.js';
+import {NOUNS, LEGACY_NOUNS, drawNames} from './nouns.js';
 export const ODDS = Object.freeze([5, 6, 7, 8, 9, 10, 12, 15, 20]);
 export const SCHEMA = 1;
 export const DEFAULT_SETTINGS = Object.freeze({initialPoints: 300, stake: 10, turns: 1});
@@ -80,7 +80,7 @@ export function createGame(names, settings, id = globalThis.crypto.randomUUID())
 
 function validateNames(names) {
   if (names === undefined) return;
-  if (!Array.isArray(names) || names.length !== 9 || new Set(names).size !== 9 || names.some(n => !NOUNS.includes(n))) fail('馬名の記録が不正です。');
+  if (!Array.isArray(names) || names.length !== 9 || new Set(names).size !== 9 || names.some(n => !NOUNS.includes(n) && !LEGACY_NOUNS.includes(n))) fail('馬名の記録が不正です。');
 }
 function validateRound(game, round, index) {
   if (!record(round) || round.index !== index || round.parentId !== parentAt(game, index).id || !stamp(round.settledAt)) fail('ラウンドの順番または親の記録が不正です。');
