@@ -1,7 +1,7 @@
 import {NOUNS, LEGACY_NOUNS, drawNames} from './nouns.js';
 export const ODDS = Object.freeze([5, 6, 7, 8, 9, 10, 12, 15, 20]);
 export const SCHEMA = 1;
-export const DEFAULT_SETTINGS = Object.freeze({initialPoints: 300, stake: 10, turns: 1});
+export const DEFAULT_SETTINGS = Object.freeze({initialPoints: 300, stake: 10, turns: 2});
 
 export function randomOdds(random = Math.random) {
   const odds = [...ODDS];
@@ -66,7 +66,7 @@ export function createDraft(game) {
   };
 }
 
-export function createGame(names, settings, id = globalThis.crypto.randomUUID()) {
+export function createGame(names, settings, id = globalThis.crypto.randomUUID(), randomizeOrder = false) {
   validateSettings(settings);
   if (!Array.isArray(names) || names.length < 2 || names.length > 10) fail('参加者は2〜10人で設定してください。');
   const clean = names.map(name => typeof name === 'string' ? name.trim() : '');
@@ -74,6 +74,12 @@ export function createGame(names, settings, id = globalThis.crypto.randomUUID())
   if (new Set(clean).size !== clean.length) fail('参加者の名前は重複しないようにしてください。');
   const game = {schemaVersion: SCHEMA, rulesVersion: 2, id, createdAt: new Date().toISOString(), completedAt: null,
     players: clean.map((name, index) => ({id: `p${index + 1}`, name})), settings: {...settings}, rounds: [], draft: null};
+  if (randomizeOrder) {
+    for (let i = game.players.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [game.players[i], game.players[j]] = [game.players[j], game.players[i]];
+    }
+  }
   game.draft = createDraft(game);
   return game;
 }

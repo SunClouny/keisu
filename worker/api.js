@@ -60,7 +60,7 @@ function update(room, action, b, member) {
   if(action==='start'){
     requireValue(host,'部屋を作った人が開始してください。',403);
     requireValue(!g&&room.members.length>=2,'2人以上の待機室で開始できます。',409);
-    room.game=createGame(room.members.map(m=>m.name),room.settings);return;
+    room.game=createGame(room.members.map(m=>m.name),room.settings,undefined,true);return;
   }
   requireValue(g && Number.isInteger(b.round) && b.round===(g.draft?g.rounds.length:g.rounds.length-1),'画面を更新して現在のラウンドを確認してください。',409);
   const parent=parentAt(g,b.round).id===member.id;
