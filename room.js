@@ -48,6 +48,9 @@ function horses(interactive){
   return `<button class="horse" data-act="pick" data-number="${m.number}" aria-pressed="${picked}" ${interactive&&!locked?'':'disabled'}><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍 · ${m.people}人</small></button>`;
  }).join('')+'</div>';
 }
+function questionOptions(){
+ return `<section class="box question-options"><h2>質問の選択肢</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
+}
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
 function historyRows(r){
@@ -83,7 +86,7 @@ function renderRoom(){
    if(parent) html+='<div class="bottom"><button class="primary" data-act="secret" '+(chosen.length?'':'disabled')+'>この数字で確定・質問開始</button></div>';
   }else if(room.stage==='betting'){
    const chatting=room.settings.questionMode==='chat', ready=!chatting||room.chat?.complete;
-   html+=chatting?chatPanel(parent):`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
+   html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
    <div class="box"><h2>${parent?'現在のオッズ':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2>${horses(!parent)}
    ${parent?'':`<label>BET（1〜1,000点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="1000" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>的中時は BET × 基本オッズ ÷ 自分の予想数 ÷ その数字の予想人数。端数は切り捨てます。</small>`}</div>
