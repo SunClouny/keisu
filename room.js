@@ -9,7 +9,7 @@ let mode=invite?'join':'create',room=null,token='',chosen=[],stake=10,busy=false
 let savedName='', viewKey='', savedDetails=new Set(),roomCode=invite||'';
 let questionDraft='', answerDraft='', lieDraft=false;
 let storageWarning=false, lastPresence=0, presencePending=false, listRequest=0;
-let revealingKey=null, revealTimer=null;
+let revealingKey=null, revealPhase=null, revealTimer=null;
 const revealedRounds=new Set();
 const storageKey=code=>'keisu.participant.'+code;
 const recentKey='keisu.recentRooms.v1';
@@ -90,24 +90,35 @@ function leavePresence(){
  fetch(API,{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({action:'leave',code:room.code}),keepalive:true}).catch(()=>{});
  lastPresence=0;
 }
+function finishReveal(){
+ clearTimeout(revealTimer);
+ if(revealingKey){revealedRounds.add(revealingKey);try{sessionStorage.setItem('keisu.reveal.v2.'+revealingKey,'1');}catch{}}
+ revealingKey=null;revealPhase=null;renderRoom();
+}
+function showStandings(){
+ if(!revealingKey||!room)return;
+ clearTimeout(revealTimer);revealPhase='standings';renderRoom();
+ const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const key=revealingKey,duration=reduced?1000:Math.min(10000,1800+room.standings.length*650);
+ revealTimer=setTimeout(()=>{if(revealingKey===key&&revealPhase==='standings')finishReveal();},duration);
+}
 function draw(data){
  if(room && data.code===room.code && data.revision<room.revision)return;
  const resultKey=data.code+':'+data.round;
  const isResult=data.stage==='result'||data.stage==='finished';
- if(revealingKey && (revealingKey!==resultKey || !isResult)){clearTimeout(revealTimer);revealingKey=null;}
- if(isResult && !revealedRounds.has(resultKey)){
-  let seen=false;try{seen=sessionStorage.getItem('keisu.reveal.'+resultKey)==='1';}catch{}
-  revealedRounds.add(resultKey);
-  if(!seen){
-   try{sessionStorage.setItem('keisu.reveal.'+resultKey,'1');}catch{}
-   revealingKey=resultKey;
-   const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches?200:3800;
-   revealTimer=setTimeout(()=>{if(revealingKey===resultKey){revealingKey=null;renderRoom();}},duration);
-  }
+ if(revealingKey && (revealingKey!==resultKey || !isResult)){clearTimeout(revealTimer);revealingKey=null;revealPhase=null;}
+ let beginReveal=false;
+ if(isResult && !revealedRounds.has(resultKey) && revealingKey!==resultKey){
+  let seen=false;try{seen=sessionStorage.getItem('keisu.reveal.v2.'+resultKey)==='1';}catch{}
+  if(seen)revealedRounds.add(resultKey);
+  else {revealingKey=resultKey;revealPhase='number';beginReveal=true;}
  }
  const nextKey=data.code+'/'+data.round+'/'+data.stage;
  if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
  room=data;roomCode=data.code;rememberRoom(data);heartbeat();
+ if(beginReveal){const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches?200:3800;
+  revealTimer=setTimeout(()=>{if(revealingKey===resultKey&&revealPhase==='number')showStandings();},duration);
+ }
  try{const url=new URL(location.href);url.searchParams.set('room',roomCode);history.replaceState(null,'',url);}catch{}
  renderRoom();
 }
@@ -126,7 +137,7 @@ function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.
 function historyRows(r){
  const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}</b><span>${o.numbers.join('・')} ／ BET ${o.stake} ／ 受取 ${o.received}点</span></li>`).join('');
  const chat=r.chat?.length?`<div class="round-chat"><h3>質問と親の回答</h3><ol class="chat-list">${chatRecords(r.chat,true)}</ol></div>`:'';
- return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p><ul class="list">${list}</ul><p>親の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${chat}`;
+ return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p><ul class="list">${list}</ul><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${chat}`;
 }
 function chatRecords(entries,revealed=false){
  return entries.map(q=>`<li class="chat-entry"><strong>${escapeHtml(memberName(q.playerId))}の質問</strong><p>${escapeHtml(q.question)}</p>${q.answer===null?'<small>親の回答待ち</small>':`<strong>親の回答</strong>${q.isLie===true?' <span class="lie-badge">嘘</span>':revealed&&q.isLie===null?' <small>嘘の記録なし</small>':''}<p>${escapeHtml(q.answer)}</p>`}</li>`).join('');
@@ -145,11 +156,17 @@ function chatPanel(parent){
 }
 function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
+ const oldChat=document.querySelector('.chat > .chat-list'), oldChatCount=oldChat?.children.length??0, oldChatTop=oldChat?.scrollTop??0;
  const isHost=room.me===room.host,parent=room.me===room.parent;
  const myName=escapeHtml(memberName(room.me)),parentName=escapeHtml(memberName(room.parent));
  if(revealingKey===room.code+':'+room.round && (room.stage==='result'||room.stage==='finished')){
-  const result=room.history.at(-1);
-  screen.innerHTML=`<section class="reveal-stage" aria-live="polite"><span class="reveal-eyebrow">RESULT TIME</span><h1>結果発表！</h1><p>運命の数字は……</p><div class="reveal-card"><span class="reveal-question" aria-hidden="true">?</span><strong class="reveal-number">${result.answer}</strong></div><p class="reveal-name">${escapeHtml(result.names?.[result.answer-1]??'')}</p><button data-act="reveal-skip">結果を見る</button></section>`;
+  if(revealPhase==='standings'){
+   const rows=room.standings.map((p,i)=>`<li style="--delay:${(room.standings.length-1-i)*0.65}s"><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('');
+   screen.innerHTML=`<section class="ranking-reveal" aria-live="polite"><span class="reveal-eyebrow">${room.stage==='finished'?'FINAL RANKING':'ROUND RANKING'}</span><h1>${room.stage==='finished'?'最終順位発表！':'順位発表！'}</h1><p>${room.stage==='finished'?'最後の順位はこちら！':'このラウンド終了時の順位はこちら！'}</p><ol class="ranking-reveal-list">${rows}</ol><button data-act="ranking-skip">${room.stage==='finished'?'対戦終了画面へ':'ラウンド結果へ'}</button></section>`;
+  }else{
+   const result=room.history.at(-1);
+   screen.innerHTML=`<section class="reveal-stage" aria-live="polite"><span class="reveal-eyebrow">RESULT TIME</span><h1>結果発表！</h1><p>運命の数字は……</p><div class="reveal-card"><span class="reveal-question" aria-hidden="true">?</span><strong class="reveal-number">${result.answer}</strong></div><p class="reveal-name">${escapeHtml(result.names?.[result.answer-1]??'')}</p><button data-act="reveal-skip">順位を見る</button></section>`;
+  }
   return;
  }
  let html=`<div class="row"><strong class="name">${myName}さん</strong><span class="chip">${room.members.length}人</span></div>`;
@@ -183,6 +200,8 @@ function renderRoom(){
  html+=panel('invite','部屋情報と招待',`<p>部屋ID <span class="code">${room.code}</span></p><button data-act="copy">招待リンクをコピー</button><p class="hint">「部屋に入る」から同じ表示名と合言葉でも戻れます。</p><button data-act="home">開始画面へ</button>`);
  const draftName=document.querySelector('#rename-name')?.value;
  screen.innerHTML=html;
+ const newChat=document.querySelector('.chat > .chat-list');
+ if(newChat)newChat.scrollTop=(!oldChat||newChat.children.length>oldChatCount)?newChat.scrollHeight:oldChatTop;
  if(id==='rename-name'&&draftName!=null)document.querySelector('#rename-name').value=draftName;
  if(id && ['room-bet','rename-name','question-text','answer-text'].includes(id)){const f=document.getElementById(id);if(f&&!f.disabled){f.focus({preventScroll:true});if(f.type==='text'&&pos!=null)f.setSelectionRange(pos,pos);}}
  tick();
@@ -221,10 +240,11 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  const a=b.dataset.act;
  if(a==='refresh-rooms'){loadRooms();return;}
  if(a==='select-room'){roomCode=b.dataset.code;const field=document.querySelector('#entry input[name="code"]');if(field)field.value=roomCode;document.querySelector('#entry input[name="phrase"]')?.focus();return;}
- if(a==='reveal-skip'){clearTimeout(revealTimer);revealingKey=null;renderRoom();return;}
+ if(a==='reveal-skip'){showStandings();return;}
+ if(a==='ranking-skip'){finishReveal();return;}
  if(a.endsWith('-mode')){mode=a.split('-')[0];say('');lobbyForm();return;}
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
- if(a==='home'){leavePresence();room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
+ if(a==='home'){leavePresence();clearTimeout(revealTimer);revealingKey=null;revealPhase=null;room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
  perform(async()=>{
   if(a==='resume'){
    const code=b.dataset.code,credential=getValue(storageKey(code));
