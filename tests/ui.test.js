@@ -51,3 +51,11 @@ test('each player sees their hit or miss and actual net change; parents see thei
  const parent=ui();parent.draw(result);parent.run('finishReveal()');
  assert.match(parent.html,/<h2>あなたは親<\/h2>/);assert.match(parent.html,/>\+3点<\/strong>/);
 });
+
+
+test('round results show base odds, lie bonus and final odds',()=>{
+ const page=ui(),base=betting([]),round={number:1,parent:'p1',answer:1,names:Array(9).fill('ねこ'),chat:[{playerId:'p2',question:'質問',answer:'はい',isLie:true}],lieCount:1,lieBonusTenths:1,outcomes:[{playerId:'p2',numbers:[1],hit:true,stake:100,received:510,delta:410,baseOdds:5,lieBonus:0.1,effectiveOdds:5.1}],parentDelta:-410};
+ page.draw({...base,me:'p2',stage:'result',revision:10,standings:[{rank:1,name:'はる',points:710},{rank:2,name:'あき',points:-110}],history:[round]});page.run('finishReveal()');
+ assert.match(page.html,/倍率：約5倍 ＋ 嘘の上乗せ 0.1倍 ＝ 約5.1倍/);
+ assert.match(page.html,/親の嘘：1回/);assert.match(page.html,/嘘による上乗せ：0.1倍/);
+});

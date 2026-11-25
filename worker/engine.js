@@ -97,6 +97,7 @@ function validateRound(game, round, index) {
   integer(round.answer, 1, 9, '正解の数字');
   validateNames(round.names);
   if (game.rulesVersion === 2) validateOdds(round.odds);
+  if (round.lieBonusTenths !== undefined) integer(round.lieBonusTenths,0,10,'嘘による倍率');
   const children = game.players.filter(p => p.id !== round.parentId);
   if (!Array.isArray(round.bets) || round.bets.length !== children.length) fail('参加者の予想記録が不足しています。');
   const ids = new Set();
@@ -110,12 +111,14 @@ function validateRound(game, round, index) {
 export function calculateRound(game, round) {
   const odds = roundOdds(game, round);
   const people = game.rulesVersion === 2 ? Math.max(1, popularity(game, round)[round.answer - 1]) : 1;
+  const bonusTenths = round.lieBonusTenths ?? 0;
   const outcomes = round.bets.map(bet => {
     const stake = bet.stake ?? game.settings.stake;
     const hit = bet.numbers.includes(round.answer);
-    const received = hit ? payout(stake, round.answer, bet.numbers.length, odds, people) : 0;
+    const divisor=bet.numbers.length*people, baseOdds=odds[round.answer-1]/divisor, lieBonus=bonusTenths/10;
+    const received = hit ? Math.floor(stake * (odds[round.answer-1]*10 + bonusTenths*divisor) / (10*divisor)) : 0;
     return {playerId: bet.playerId, numbers: [...bet.numbers], hit, stake, received, delta: received - stake,
-      effectiveOdds: odds[round.answer - 1] / (bet.numbers.length * people), popularity: people};
+      baseOdds, lieBonus, effectiveOdds:baseOdds+lieBonus, popularity: people};
   });
   return {outcomes, parentDelta: -outcomes.reduce((sum, outcome) => sum + outcome.delta, 0),
     totalPayout: outcomes.reduce((sum, outcome) => sum + outcome.received, 0),

@@ -34,9 +34,6 @@ function chatComplete(room) {
   return room.members.filter(m => m.id !== parent).every(m =>
     chat.entries.filter(q => q.playerId === m.id && q.answer !== null).length >= room.settings.questionsPerPlayer);
 }
-function lieLimit(room) {
-  return Math.ceil((room.members.length - 1) * room.settings.questionsPerPlayer / 3);
-}
 function chatText(value) {
   const text = typeof value === 'string' ? value.trim() : '';
   requireValue(text.length >= 1 && text.length <= 160 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text), '質問と回答は1〜160文字で入力してください。');
@@ -48,12 +45,11 @@ function view(room, self) {
   if (!g) return {...base, stage:'lobby'};
   const current=g.draft, round=current?g.rounds.length:g.rounds.length-1;
   const parent=parentAt(g,round).id;
-  const history=g.rounds.map(r=>({number:r.index+1,parent:r.parentId,answer:r.answer,names:r.names,odds:r.odds,...calculateRound(g,r),...(r.chat?{chat:r.chat}:{})}));
+  const history=g.rounds.map(r=>({number:r.index+1,parent:r.parentId,answer:r.answer,names:r.names,odds:r.odds,...calculateRound(g,r),...(r.chat?{chat:r.chat,lieCount:r.chat.filter(q=>q.isLie===true).length}:{}),...(r.lieBonusTenths!==undefined?{lieBonusTenths:r.lieBonusTenths}:{})}));
   const chat=room.settings.questionMode==='chat' && room.chat?.round===round ? {
     round:room.chat.round,
     entries:room.chat.entries.map(({playerId,question,answer,isLie}) => ({playerId,question,answer,...(self===parent || !current ? {isLie:typeof isLie==='boolean'?isLie:null} : {})})),
     complete:current ? chatComplete(room) : true,
-    lieLimit:lieLimit(room),
     ...(self===parent && current ? {liesUsed:room.chat.entries.filter(q=>q.isLie===true).length} : {})
   } : null;
   return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
@@ -97,7 +93,6 @@ function update(room, action, b, member) {
       requireValue(!!pending,'回答待ちの質問がありません。',409);
       requireValue(b.isLie===undefined || typeof b.isLie==='boolean','嘘の指定を確認してください。');
       const isLie=b.isLie===true;
-      requireValue(!isLie || entries.filter(q=>q.isLie===true).length < lieLimit(room),'嘘をつける回数を使い切りました。',409);
       pending.answer=chatText(b.text);pending.isLie=isLie;
     }
     return;
@@ -111,8 +106,10 @@ function update(room, action, b, member) {
     bet.stake=b.stake;bet.numbers=validNumbers(b.numbers);bet.locked=true;
     if(Object.values(g.draft.bets).every(x=>x.locked)){
       const settled=settle(g);
-      if(room.settings.questionMode==='chat' && room.chat?.round===b.round)
+      if(room.settings.questionMode==='chat' && room.chat?.round===b.round){
         settled.chat=room.chat.entries.map(({playerId,question,answer,isLie})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null}));
+        settled.lieBonusTenths=Math.min(10,settled.chat.filter(q=>q.isLie===true).length);
+      }
       room.endsAt=null;
     }
     return;

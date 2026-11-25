@@ -4,6 +4,7 @@ const API=(location.origin===SERVER?location.origin:SERVER)+'/api/rooms';
 const screen=document.querySelector('#screen'), errorBox=document.querySelector('#error');
 const escapeHtml = value => String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const format = x => Number(x).toLocaleString('ja-JP',{maximumFractionDigits:2});
+const formatOdds = x => Number(x).toLocaleString('ja-JP',{maximumFractionDigits:3});
 const invite = new URL(location.href).searchParams.get('room')?.toUpperCase();
 let mode=invite?'join':'create',room=null,token='',chosen=[],stake=10,busy=false,polling=false;
 let savedName='', viewKey='', savedDetails=new Set(),roomCode=invite||'';
@@ -58,7 +59,7 @@ function lobbyForm(){
  ${joining?'<p class="hint">同じ表示名と部屋の合言葉で、元の参加者として戻れます。</p>':''}
  ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準BET<input type="number" name="stake" min="1" max="1000" value="10" required></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <label>質問の進め方<select name="questionMode" id="question-mode"><option value="timer">制限時間（1分）</option><option value="chat">チャットで質問</option></select></label>
- <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親が嘘をつけるのは、子全員の質問総数の3分の1を切り上げた回数です。</small></label>`}
+ <label id="question-count-label" hidden>質問回数（子1人あたり、全員共通）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" disabled required><small class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.1倍上がります（最大＋1倍）。</small></label>`}
  <button class="primary">${joining?'この名前で参加':'この名前で部屋を作る'}</button></form>
  <p class="hint">作成者から招待リンクと合言葉を共有してください。部屋は作成から24時間利用できます。</p>`;
  if(joining)loadRooms();
@@ -135,16 +136,22 @@ function questionOptions(){
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
 function signedPoints(points){return (points>0?'+':'')+format(points)+'点';}
+function oddsText(outcome){
+ if(!Number.isFinite(outcome.effectiveOdds))return '';
+ const base=Number.isFinite(outcome.baseOdds)?outcome.baseOdds:outcome.effectiveOdds;
+ const bonus=Number.isFinite(outcome.lieBonus)?outcome.lieBonus:0;
+ return bonus?`倍率：約${formatOdds(base)}倍 ＋ 嘘の上乗せ ${formatOdds(bonus)}倍 ＝ 約${formatOdds(outcome.effectiveOdds)}倍`:`倍率：約${formatOdds(outcome.effectiveOdds)}倍`;
+}
 function myRoundResult(r){
  if(r.parent===room.me)return `<section class="box my-result my-result-parent"><h2>あなたは親</h2><p>このラウンドの収支</p><strong class="my-result-points">${signedPoints(r.parentDelta)}</strong></section>`;
  const outcome=r.outcomes.find(o=>o.playerId===room.me);
  if(!outcome)return '';
- return `<section class="box my-result ${outcome.hit?'my-result-hit':'my-result-miss'}"><h2>あなたの結果</h2><strong class="my-result-status">${outcome.hit?'🎯 的中！':'はずれ'}</strong><p>あなたの予想：${outcome.numbers.join('・')}　／　正解：${r.answer}</p><p>BET ${format(outcome.stake)}点　／　受取 ${format(outcome.received)}点</p><p>このラウンドの収支 <strong class="my-result-points">${signedPoints(outcome.delta)}</strong></p></section>`;
+ return `<section class="box my-result ${outcome.hit?'my-result-hit':'my-result-miss'}"><h2>あなたの結果</h2><strong class="my-result-status">${outcome.hit?'🎯 的中！':'はずれ'}</strong><p>あなたの予想：${outcome.numbers.join('・')}　／　正解：${r.answer}</p><p>${oddsText(outcome)}${outcome.hit?'':'（的中した場合）'}</p><p>BET ${format(outcome.stake)}点　／　受取 ${format(outcome.received)}点</p><p>このラウンドの収支 <strong class="my-result-points">${signedPoints(outcome.delta)}</strong></p></section>`;
 }
 function historyRows(r){
- const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}${o.playerId===room.me?'（あなた）':''} <span class="result-badge ${o.hit?'result-badge-hit':'result-badge-miss'}">${o.hit?'的中':'はずれ'}</span></b><span>${o.numbers.join('・')} ／ BET ${format(o.stake)} ／ 受取 ${format(o.received)}点 ／ 収支 ${signedPoints(o.delta)}</span></li>`).join('');
+ const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}${o.playerId===room.me?'（あなた）':''} <span class="result-badge ${o.hit?'result-badge-hit':'result-badge-miss'}">${o.hit?'的中':'はずれ'}</span></b><span>${o.numbers.join('・')} ／ ${oddsText(o)}${o.hit?'':'（的中した場合）'} ／ BET ${format(o.stake)} ／ 受取 ${format(o.received)}点 ／ 収支 ${signedPoints(o.delta)}</span></li>`).join('');
  const chat=r.chat?.length?`<div class="round-chat"><h3>質問と親の回答</h3><ol class="chat-list">${chatRecords(r.chat,true)}</ol></div>`:'';
- return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p><ul class="list">${list}</ul><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${chat}`;
+ return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p>${r.chat?`<p>親の嘘：${r.lieCount??r.chat.filter(q=>q.isLie===true).length}回 ／ ${r.lieBonusTenths===undefined?'嘘による上乗せなし（以前のルール）':`嘘による上乗せ：${formatOdds(r.lieBonusTenths/10)}倍`}</p>`:''}<ul class="list">${list}</ul><p class="hint">倍率は表示上丸めています。受取額は計算後に端数を切り捨てます。</p><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${chat}`;
 }
 function chatRecords(entries,revealed=false){
  return entries.map(q=>`<li class="chat-entry"><strong>${escapeHtml(memberName(q.playerId))}の質問</strong><p>${escapeHtml(q.question)}</p>${q.answer===null?'<small>親の回答待ち</small>':`<strong>親の回答</strong>${q.isLie===true?' <span class="lie-badge">嘘</span>':revealed&&q.isLie===null?' <small>嘘の記録なし</small>':''}<p>${escapeHtml(q.answer)}</p>`}</li>`).join('');
@@ -153,13 +160,12 @@ function chatPanel(parent){
  const chat=room.chat, entries=chat?.entries??[], pending=entries.find(q=>q.answer===null);
  const used=entries.filter(q=>q.playerId===room.me).length, limit=room.settings.questionsPerPlayer;
  const messages=chatRecords(entries);
- const remaining=parent?Math.max(0,chat.lieLimit-chat.liesUsed):null;
  let form='';
- if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}" placeholder="回答を入力"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft&&remaining>0?'checked':''} ${remaining===0?'disabled':''}>この回答は嘘</label><button class="primary">回答を送る</button></form>`;
+ if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}" placeholder="回答を入力"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft?'checked':''}>この回答は嘘</label><button class="primary">回答を送る</button></form>`;
  else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}" placeholder="親への質問を入力"></label><button class="primary">質問を送る</button></form>`;
  let status=chat.complete?'全員の質問と回答が終わりました。':parent?(pending?'質問に回答してください。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あなたの残り質問回数：${limit-used}回`);
  const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
- return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><p class="hint">親が嘘をつける回数：${chat.lieLimit}回${parent?`（残り${remaining}回）`:''}。嘘の内容は精算後に表示されます。</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
+ return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p><p class="hint">親は何回でも嘘をつけます。嘘１回につき、的中時の倍率が0.1倍上がります（最大＋1倍）。嘘の内容は精算後に表示されます。</p><ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
 }
 function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
@@ -181,7 +187,7 @@ function renderRoom(){
  if(room.stage==='lobby'){
   const players=room.members.map((m,i)=>`<li><span>${i+1}　${escapeHtml(m.name)}</span>${m.id===room.host?'<small>部屋の作成者</small>':''}</li>`).join('');
   html+=`<h1>待機室</h1><div class="box"><h2>部屋ID</h2><span class="code">${room.code}</span><p>招待リンクと、作成時に決めた合言葉を参加者に伝えてください。</p><button data-act="copy">招待リンクをコピー</button></div>
-  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回 ／ 嘘は親1人につき1ラウンド${Math.ceil((room.members.length-1)*room.settings.questionsPerPlayer/3)}回まで`:'制限時間：1分'}</p></div>
+  <div class="box"><h2>参加者</h2><ol class="list">${players}</ol><p class="hint">対戦開始時に順番をランダムに決めます。</p><p class="hint">初期${room.settings.initialPoints}点 ／ 標準BET ${room.settings.stake} ／ 親は各${room.settings.turns}回 ／ ${room.settings.questionMode==='chat'?`チャット質問：子1人${room.settings.questionsPerPlayer}回 ／ 嘘は回数制限なし（嘘１回につき的中時の倍率＋0.1倍、最大＋1倍）`:'制限時間：1分'}</p></div>
   ${panel('rename','表示名を変更',`<form id="rename" class="form"><label>表示名<input id="rename-name" name="name" required maxlength="20" value="${myName}"></label><button>変更を保存</button></form>`)}
   ${isHost?`<button class="primary wide" data-act="start" ${room.members.length<2?'disabled':''}>このメンバーで開始</button>`:'<p>作成者が開始するのを待っています。</p>'}`;
  }else{
@@ -194,7 +200,7 @@ function renderRoom(){
    html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
    <div class="box"><h2>${parent?'基本オッズ':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">全員の予想が確定した後、予想人数を反映したオッズを公開します。</p>${horses(!parent)}
-   ${parent?'':`<label>BET（1〜1,000点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="1000" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>的中時は BET × 基本オッズ ÷ 自分の予想数 ÷ その数字の予想人数。端数は切り捨てます。</small>`}</div>
+   ${parent?'':`<label>BET（1〜1,000点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="1000" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>的中時は BET ×（基本オッズ ÷ 自分の予想数 ÷ その数字の予想人数${chatting?' ＋ 嘘による倍率':''}）。端数は切り捨てます。</small>`}</div>
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
    if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想とBETを確定</button></div>';
   }else{

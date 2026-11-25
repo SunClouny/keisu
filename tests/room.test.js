@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handleAPI} from '../worker/api.js';
 import {NOUNS} from '../worker/nouns.js';
+import {calculateRound} from '../worker/engine.js';
 
 function setup(){
   const entries=new Map();let sequence=0;
@@ -52,24 +53,32 @@ test('random order preserves identities, private choices and correct settlement'
   assert.notEqual(keys[next.parent],parent);
 });
 
-test('chat questions, lie limits and answers are revealed after settlement',async()=>{
-  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:2});
-  await call(parent,'secret',{round:0,number:2});
-  await call(children[0],'ask',{round:0,text:'ひとつめ？'});
-  await call(children[1],'ask',{round:0,text:'まだ？'},409);
-  await call(parent,'answer',{round:0,text:'はい',isLie:true});
-  let childView=await call(children[0],'state');assert.equal('isLie' in childView.chat.entries[0],false);
-  await call(children[1],'ask',{round:0,text:'ふたつめ？'});
-  await call(parent,'answer',{round:0,text:'いいえ',isLie:true});
-  await call(children[0],'ask',{round:0,text:'みっつめ？'});
-  await call(parent,'answer',{round:0,text:'はい',isLie:true},409);
-  await call(parent,'answer',{round:0,text:'はい',isLie:false});
-  await call(children[1],'bet',{round:0,numbers:[2],stake:10},409);
-  await call(children[1],'ask',{round:0,text:'よっつめ？'});
-  await call(parent,'answer',{round:0,text:'いいえ',isLie:false});
-  await call(children[0],'bet',{round:0,numbers:[2],stake:10});
-  const result=await call(children[1],'bet',{round:0,numbers:[3],stake:10});
-  assert.equal(result.stage,'result');assert.deepEqual(result.history[0].chat.map(q=>q.isLie),[true,true,false,false]);
+test('chat permits repeated lies and applies capped bonus to every correct bet',async()=>{
+  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:6});
+  const betting=await call(parent,'secret',{round:0,number:2});
+  for(let i=0;i<12;i++){
+    const child=children[i%2];await call(child,'ask',{round:0,text:`質問${i}`});
+    if(i===0)await call(children[1],'ask',{round:0,text:'まだ？'},409);
+    await call(parent,'answer',{round:0,text:'はい',isLie:true});
+    if(i===0){const childView=await call(child,'state');assert.equal('isLie' in childView.chat.entries[0],false);}
+  }
+  await call(children[0],'bet',{round:0,numbers:[2],stake:100});
+  const result=await call(children[1],'bet',{round:0,numbers:[2],stake:80}),round=result.history[0];
+  assert.equal(result.stage,'result');assert.equal(round.lieCount,12);assert.equal(round.lieBonusTenths,10);
+  assert.ok(round.chat.every(q=>q.isLie));
+  const base=betting.market[1].base/2;
+  assert.deepEqual(round.outcomes.map(o=>o.received).sort((a,b)=>a-b),[Math.floor(80*(base+1)),Math.floor(100*(base+1))].sort((a,b)=>a-b));
+  assert.ok(round.outcomes.every(o=>o.baseOdds===base && o.lieBonus===1 && o.effectiveOdds===base+1));
+  assert.equal(round.parentDelta,-round.outcomes.reduce((sum,o)=>sum+o.delta,0));
+});
+
+test('lie bonus uses exact final rounding and old rounds keep their historical payouts',()=>{
+  const game={rulesVersion:2,settings:{stake:10}},round={answer:1,odds:[5,6,7,8,9,10,12,15,20],bets:[{playerId:'p2',stake:7,numbers:[1,2,3]}]};
+  const previous=calculateRound(game,round).outcomes[0];
+  const current=calculateRound(game,{...round,lieBonusTenths:3}).outcomes[0];
+  assert.equal(previous.received,11);assert.equal(previous.lieBonus,0);
+  assert.equal(current.received,13);assert.equal(current.lieBonus,0.3);
+  const miss=calculateRound(game,{...round,answer:9,lieBonusTenths:3}).outcomes[0];assert.equal(miss.received,0);assert.equal(miss.delta,-7);
 });
 
 test('reentry keeps identity and active room listing hides empty or started rooms',async()=>{
