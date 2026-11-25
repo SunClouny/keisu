@@ -94,7 +94,7 @@ export function createGame(names, settings, id = globalThis.crypto.randomUUID(),
 
 function validateNames(names) {
   if (names === undefined) return;
-  if (!Array.isArray(names) || names.length !== 9 || new Set(names).size !== 9 || names.some(n => !NOUNS.includes(n) && !LEGACY_NOUNS.includes(n))) fail('馬名の記録が不正です。');
+  if (!Array.isArray(names) || names.length !== 9 || new Set(names).size !== 9 || names.some(n => !NOUNS.includes(n) && !LEGACY_NOUNS.includes(n))) fail('お題の記録が不正です。');
 }
 function validateRound(game, round, index) {
   if (!record(round) || round.index !== index || round.parentId !== parentAt(game, index).id || !stamp(round.settledAt)) fail('ラウンドの順番または親の記録が不正です。');
@@ -252,7 +252,7 @@ export function validateBackup(data) {
 }
 
 export function csv(game) {
-  const rows = [['ラウンド', '親', '正解', '正解の馬名', '正解の基本オッズ', '正解の予想人数', '人気補正後倍率', '参加者', '役割', '予想', '実効倍率', 'BET', '受取額', '収支', '精算前ポイント', '精算後ポイント', '精算日時']];
+  const rows = [['ラウンド', '親', '正解', '正解のお題', '正解の基本オッズ', '正解の予想人数', '人気補正後倍率', '参加者', '役割', '予想', '実効倍率', 'BET', '受取額', '収支', '精算前ポイント', '精算後ポイント', '精算日時']];
   const points = Object.fromEntries(game.players.map(p => [p.id, game.settings.initialPoints]));
   for (const round of game.rounds) {
     const result = calculateRound(game, round), parent = game.players.find(p => p.id === round.parentId);

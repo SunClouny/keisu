@@ -48,7 +48,7 @@ function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
 function lobbyForm(){
  const joining=mode==='join';
- screen.innerHTML=`<section class="lobby-hero"><div><h1>数読みダービー</h1><p>親が選んだ馬を、質問をヒントに当てよう。<br>2〜10人用</p></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
+ screen.innerHTML=`<section class="lobby-hero"><div><h1>数読みダービー</h1><p>お題について親に質問して、親が選んだ数字を当てよう。<br>2〜10人用</p></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
  <nav class="tabs"><button data-act="create-mode" aria-pressed="${mode==='create'}">部屋を作る</button><button data-act="join-mode" aria-pressed="${mode==='join'}">部屋に入る</button></nav>
  ${joining?`<section class="box"><div class="room-list-heading"><h2>参加できる部屋</h2><button type="button" data-act="refresh-rooms">更新</button></div><div id="available-rooms" aria-live="polite"><p class="hint">部屋を探しています…</p></div></section>`:''}
  ${joining?'<div id="recent-rooms"></div>':''}
@@ -130,7 +130,7 @@ function horses(interactive){
  }).join('')+'</div>';
 }
 function questionOptions(){
- return `<section class="box question-options"><h2>出走表</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
+ return `<section class="box question-options"><h2>数字とお題</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
 }
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
@@ -165,7 +165,7 @@ function chatPanel(parent){
  else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}"></label><button class="primary">質問を送る</button></form>`;
  let status=chat.complete?'質問終了':parent?(pending?'回答待ちの質問があります。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あと${limit-used}回質問できます`);
  const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
- return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p>${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'複数の馬を選ぶと、上乗せも選んだ数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}<ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
+ return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p>${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}<ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
 }
 function renderRoom(){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
@@ -197,11 +197,11 @@ function renderRoom(){
    if(parent) html+='<div class="bottom"><button class="primary" data-act="secret" '+(chosen.length?'':'disabled')+'>この数字で確定・質問開始</button></div>';
   }else if(room.stage==='betting'){
    const chatting=room.settings.questionMode==='chat', ready=!chatting||room.chat?.complete;
-   if(parent && room.mySecret)html+=`<p class="box">あなたが選んだ馬　<strong>${room.mySecret}　${escapeHtml(room.names[room.mySecret-1])}</strong></p>`;
+   if(parent && room.mySecret)html+=`<p class="box">あなたが選んだ数字　<strong>${room.mySecret}　${escapeHtml(room.names[room.mySecret-1])}</strong></p>`;
    html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
-   <div class="box"><h2>${parent?'出走表':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ馬を選んだ人数で基本オッズを割ります。倍率は全員の確定後に発表します。</p>${horses(!parent)}
-   ${parent?'':`<label>賭け点（1〜${format(room.maxStake??1000)}点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="${room.maxStake??1000}" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>賭け点は選んだ馬に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
+   <div class="box"><h2>${parent?'数字とお題':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ数字を選んだ人数で基本オッズを割ります。倍率は全員の確定後に発表します。</p>${horses(!parent)}
+   ${parent?'':`<label>賭け点（1〜${format(room.maxStake??1000)}点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="${room.maxStake??1000}" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>賭け点は選んだ数字に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
    if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想を確定</button></div>';
   }else{
