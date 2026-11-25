@@ -94,6 +94,46 @@ test('lie bonus uses exact final rounding and old rounds keep their historical p
   const miss=calculateRound(game,{...round,answer:9,lieBonusTenths:3}).outcomes[0];assert.equal(miss.received,0);assert.equal(miss.delta,-7);
 });
 
+test('unknown increases parent risk and transfers the same amount from asker to other children',async()=>{
+  const {call,started,parent,children,keys}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:1});
+  const betting=await call(parent,'secret',{round:0,number:1});
+  await call(children[0],'ask',{round:0,text:'難しい？'});
+  await call(children[1],'answer',{round:0,isUnknown:true},403);
+  const answered=await call(parent,'answer',{round:0,isUnknown:true});
+  assert.equal(answered.chat.entries[0].answer,'わからない');assert.equal(answered.chat.entries[0].isUnknown,true);
+  await call(children[1],'ask',{round:0,text:'やさしい？'});await call(parent,'answer',{round:0,text:'はい',isLie:false});
+  await call(children[0],'bet',{round:0,numbers:[1],stake:100});
+  const result=await call(children[1],'bet',{round:0,numbers:[1],stake:100}),r=result.history[0];
+  assert.equal(r.lieCount,0);assert.equal(r.lieBonusTenths,5);
+  const id=started.members.find(m=>keys[m.id]===children[0]).id,other=started.members.find(m=>keys[m.id]===children[1]).id;
+  assert.deepEqual(r.unknownTransfers,[{playerId:id,amount:100,shares:[{playerId:other,points:100}]}]);
+  const asker=r.outcomes.find(o=>o.playerId===id),recipient=r.outcomes.find(o=>o.playerId===other);
+  const baseline=Math.floor(100*betting.market[0].base/2);
+  assert.equal(asker.received,baseline+50);assert.equal(asker.delta,asker.received-100-100);
+  assert.equal(recipient.delta,recipient.received-100+100);
+  assert.equal(r.parentDelta,-(asker.received-100)-(recipient.received-100));
+  assert.equal(result.standings.reduce((sum,p)=>sum+p.points,0),900);
+});
+
+test('a typed unknown answer uses the same rules as the button',async()=>{
+  const {call,parent,children}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:1});
+  await call(parent,'secret',{round:0,number:1});await call(children[0],'ask',{round:0,text:'質問'});
+  const answer=await call(parent,'answer',{round:0,text:'分かりません。',isLie:true});
+  assert.equal(answer.chat.entries[0].answer,'わからない');assert.equal(answer.chat.entries[0].isUnknown,true);assert.equal(answer.chat.entries[0].isLie,false);
+});
+
+test('two players have no recipient and a miss causes no extra loss',()=>{
+  const game={rulesVersion:2,settings:{stake:10},players:[{id:'p1'},{id:'p2'}]},round={index:0,parentId:'p1',answer:1,odds:[5,6,7,8,9,10,12,15,20],lieBonusTenths:5,unknownTransferVersion:1,chat:[{playerId:'p2',isUnknown:true}],bets:[{playerId:'p2',stake:100,numbers:[1]}]};
+  const hit=calculateRound(game,round);assert.deepEqual(hit.unknownTransfers,[{playerId:'p2',amount:50,shares:[]}]);assert.equal(hit.outcomes[0].delta,400);assert.equal(hit.parentDelta,-450);
+  const miss=calculateRound(game,{...round,answer:2});assert.equal(miss.unknownTransfers[0].amount,0);assert.equal(miss.outcomes[0].delta,-100);
+});
+
+test('distribution keeps remainders and respects the multiplier cap',()=>{
+  const game={rulesVersion:2,settings:{stake:10},players:[{id:'p1'},{id:'p2'},{id:'p3'},{id:'p4'},{id:'p5'}]},round={index:0,parentId:'p1',answer:1,odds:[5,6,7,8,9,10,12,15,20],lieBonusTenths:5,unknownTransferVersion:1,chat:[{playerId:'p2',isUnknown:true}],bets:[{playerId:'p2',stake:11,numbers:[1]},{playerId:'p3',stake:3,numbers:[2]},{playerId:'p4',stake:3,numbers:[2]},{playerId:'p5',stake:3,numbers:[2]}]};
+  const r=calculateRound(game,round),transfer=r.unknownTransfers[0];assert.equal(transfer.amount,5);assert.equal(transfer.shares.reduce((n,p)=>n+p.points,0),5);assert.deepEqual(transfer.shares.map(p=>p.points).sort(),[1,2,2]);assert.equal(r.outcomes.reduce((sum,o)=>sum+o.delta,0)+r.parentDelta,0);
+  const afterCap=calculateRound(game,{...round,lieBonusTenths:50,chat:[...Array.from({length:10},()=>({isLie:true})),{playerId:'p2',isUnknown:true}]});assert.equal(afterCap.unknownTransfers[0].amount,0);
+});
+
 test('reentry keeps identity and active room listing hides empty or started rooms',async()=>{
   const {call,setCode}=setup(),settings={initialPoints:300,stake:10,turns:1};
   const created=await call('a','create',{name:'あき',phrase:pass,settings},201);setCode(created.code);

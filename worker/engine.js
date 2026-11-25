@@ -112,17 +112,38 @@ export function calculateRound(game, round) {
   const odds = roundOdds(game, round);
   const people = game.rulesVersion === 2 ? Math.max(1, popularity(game, round)[round.answer - 1]) : 1;
   const bonusTenths = round.lieBonusTenths ?? 0;
+  const winningsAt = (bet,extra) => {
+    if (!bet.numbers.includes(round.answer)) return 0;
+    const stake=bet.stake ?? game.settings.stake, divisor=bet.numbers.length*people;
+    return Math.floor(stake*(odds[round.answer-1]*10+extra*divisor)/(10*divisor));
+  };
   const outcomes = round.bets.map(bet => {
-    const stake = bet.stake ?? game.settings.stake;
-    const hit = bet.numbers.includes(round.answer);
-    const divisor=bet.numbers.length*people, baseOdds=odds[round.answer-1]/divisor, lieBonus=bonusTenths/10;
-    const received = hit ? Math.floor(stake * (odds[round.answer-1]*10 + bonusTenths*divisor) / (10*divisor)) : 0;
-    return {playerId: bet.playerId, numbers: [...bet.numbers], hit, stake, received, delta: received - stake,
-      baseOdds, lieBonus, effectiveOdds:baseOdds+lieBonus, popularity: people};
+    const stake=bet.stake ?? game.settings.stake, hit=bet.numbers.includes(round.answer);
+    const divisor=bet.numbers.length*people,baseOdds=odds[round.answer-1]/divisor,lieBonus=bonusTenths/10;
+    const received=winningsAt(bet,bonusTenths);
+    return {playerId:bet.playerId,numbers:[...bet.numbers],hit,stake,received,delta:received-stake,
+      baseOdds,lieBonus,effectiveOdds:baseOdds+lieBonus,popularity:people};
   });
-  return {outcomes, parentDelta: -outcomes.reduce((sum, outcome) => sum + outcome.delta, 0),
-    totalPayout: outcomes.reduce((sum, outcome) => sum + outcome.received, 0),
-    totalStakes: outcomes.reduce((sum, o) => sum + o.stake, 0)};
+  const parentDelta=-outcomes.reduce((sum,outcome)=>sum+outcome.delta,0);
+  const unknownTransfers=[];
+  if(round.unknownTransferVersion===1 && Array.isArray(round.chat)){
+    let riskAnswers=0;
+    for(const [index,entry] of round.chat.entries()){
+      if(entry.isLie!==true && entry.isUnknown!==true)continue;
+      const before=Math.min(50,riskAnswers*5),after=Math.min(50,(riskAnswers+1)*5);riskAnswers++;
+      if(entry.isUnknown!==true)continue;
+      const amount=round.bets.reduce((sum,bet)=>sum+winningsAt(bet,after)-winningsAt(bet,before),0);
+      const recipients=game.players.filter(p=>p.id!==round.parentId&&p.id!==entry.playerId);
+      const rotated=recipients.length?recipients.slice((round.index+index)%recipients.length).concat(recipients.slice(0,(round.index+index)%recipients.length)):[];
+      const shares=rotated.map((p,i)=>({playerId:p.id,points:Math.floor(amount/rotated.length)+(i<amount%rotated.length?1:0)}));
+      const payer=outcomes.find(o=>o.playerId===entry.playerId);if(payer)payer.delta-=amount;
+      for(const share of shares){const recipient=outcomes.find(o=>o.playerId===share.playerId);if(recipient)recipient.delta+=share.points;}
+      unknownTransfers.push({playerId:entry.playerId,amount,shares});
+    }
+  }
+  return {outcomes,parentDelta,unknownTransfers,
+    totalPayout:outcomes.reduce((sum,outcome)=>sum+outcome.received,0),
+    totalStakes:outcomes.reduce((sum,o)=>sum+o.stake,0)};
 }
 
 export function balances(game, through = game.rounds.length) {

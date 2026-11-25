@@ -48,7 +48,7 @@ function view(room, self) {
   const history=g.rounds.map(r=>({number:r.index+1,parent:r.parentId,answer:r.answer,names:r.names,odds:r.odds,...calculateRound(g,r),...(r.chat?{chat:r.chat,lieCount:r.chat.filter(q=>q.isLie===true).length}:{}),...(r.lieBonusTenths!==undefined?{lieBonusTenths:r.lieBonusTenths}:{})}));
   const chat=room.settings.questionMode==='chat' && room.chat?.round===round ? {
     round:room.chat.round,
-    entries:room.chat.entries.map(({playerId,question,answer,isLie}) => ({playerId,question,answer,...(self===parent || !current ? {isLie:typeof isLie==='boolean'?isLie:null} : {})})),
+    entries:room.chat.entries.map(({playerId,question,answer,isLie,isUnknown}) => ({playerId,question,answer,...(isUnknown===true?{isUnknown:true}:{}),...(self===parent || !current ? {isLie:typeof isLie==='boolean'?isLie:null} : {})})),
     complete:current ? chatComplete(room) : true,
     ...(self===parent && current ? {liesUsed:room.chat.entries.filter(q=>q.isLie===true).length} : {})
   } : null;
@@ -92,8 +92,11 @@ function update(room, action, b, member) {
       requireValue(parent,'今回の親だけが回答できます。',403);
       requireValue(!!pending,'回答待ちの質問がありません。',409);
       requireValue(b.isLie===undefined || typeof b.isLie==='boolean','嘘の指定を確認してください。');
-      const isLie=b.isLie===true;
-      pending.answer=chatText(b.text);pending.isLie=isLie;
+      requireValue(b.isUnknown===undefined || typeof b.isUnknown==='boolean','回答の指定を確認してください。');
+      const text=b.isUnknown===true?'わからない':chatText(b.text);
+      const isUnknown=b.isUnknown===true||/^(?:わからない|分からない|わかりません|分かりません|わからん|分からん|知らない|知りません)[。！!？?\s]*$/.test(text.normalize('NFKC'));
+      pending.answer=isUnknown?'わからない':text;pending.isLie=!isUnknown&&b.isLie===true;
+      if(isUnknown)pending.isUnknown=true;
     }
     return;
   }
@@ -107,8 +110,9 @@ function update(room, action, b, member) {
     if(Object.values(g.draft.bets).every(x=>x.locked)){
       const settled=settle(g);
       if(room.settings.questionMode==='chat' && room.chat?.round===b.round){
-        settled.chat=room.chat.entries.map(({playerId,question,answer,isLie})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null}));
-        settled.lieBonusTenths=Math.min(50,settled.chat.filter(q=>q.isLie===true).length*5);
+        settled.chat=room.chat.entries.map(({playerId,question,answer,isLie,isUnknown})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null,...(isUnknown===true?{isUnknown:true}:{})}));
+        settled.unknownTransferVersion=1;
+        settled.lieBonusTenths=Math.min(50,settled.chat.filter(q=>q.isLie===true||q.isUnknown===true).length*5);
       }
       room.endsAt=null;
     }

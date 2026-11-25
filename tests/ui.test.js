@@ -56,6 +56,14 @@ test('each player sees their hit or miss and actual net change; parents see thei
 test('round results show base odds, lie bonus and final odds',()=>{
  const page=ui(),base=betting([]),round={number:1,parent:'p1',answer:1,names:Array(9).fill('ねこ'),chat:[{playerId:'p2',question:'質問',answer:'はい',isLie:true}],lieCount:1,lieBonusTenths:5,outcomes:[{playerId:'p2',numbers:[1],hit:true,stake:100,received:550,delta:450,baseOdds:5,lieBonus:0.5,effectiveOdds:5.5}],parentDelta:-450};
  page.draw({...base,me:'p2',stage:'result',revision:10,standings:[{rank:1,name:'はる',points:710},{rank:2,name:'あき',points:-110}],history:[round]});page.run('finishReveal()');
- assert.match(page.html,/倍率：約5倍 ＋ 嘘の上乗せ 0.5倍 ＝ 約5.5倍/);
- assert.match(page.html,/親の嘘：1回/);assert.match(page.html,/嘘による上乗せ：0.5倍/);
+ assert.match(page.html,/倍率：約5倍 ＋ 嘘・わからないの上乗せ 0.5倍 ＝ 約5.5倍/);
+ assert.match(page.html,/親の嘘：1回/);assert.match(page.html,/嘘・わからないによる上乗せ：0.5倍/);
+});
+
+
+test('parent can choose unknown and the settlement shows distributions',()=>{
+ const page=ui(),base=betting([{playerId:'p2',question:'質問',answer:null}]);
+ page.draw(base);assert.match(page.html,/data-act="unknown-answer">わからない/);
+ const result={...base,stage:'result',revision:10,standings:[{rank:1,name:'あき',points:300},{rank:1,name:'はる',points:300}],history:[{number:1,parent:'p1',answer:1,names:Array(9).fill('ねこ'),chat:[{playerId:'p2',question:'質問',answer:'わからない',isUnknown:true,isLie:false}],lieCount:0,lieBonusTenths:5,unknownTransfers:[{playerId:'p2',amount:5,shares:[]}],outcomes:[{playerId:'p2',numbers:[1],hit:true,stake:10,received:55,delta:40,baseOdds:5,lieBonus:0.5,effectiveOdds:5.5}],parentDelta:-45}]};
+ page.draw(result);page.run('finishReveal()');assert.match(page.html,/「わからない」の精算/);assert.match(page.html,/はるの負担　-5点/);assert.match(page.html,/分配先なし/);
 });
