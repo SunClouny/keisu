@@ -40,3 +40,14 @@ test('ranking appears after the result and before the final screen, with the par
  page.run('showStandings()');assert.match(page.html,/最終順位発表/);assert.doesNotMatch(page.html,/<h1>対戦終了<\/h1>/);
  page.run('finishReveal()');assert.match(page.html,/<h1>対戦終了<\/h1>/);assert.match(page.html,/親：あきの収支/);
 });
+
+test('each player sees their hit or miss and actual net change; parents see their own balance',()=>{
+ const base=betting([]),round={number:1,parent:'p1',answer:1,names:Array(9).fill('ねこ'),outcomes:[{playerId:'p2',numbers:[1,2],hit:true,stake:10,received:7,delta:-3}],parentDelta:3};
+ const result={...base,stage:'result',revision:10,standings:[{rank:1,name:'あき',points:303},{rank:2,name:'はる',points:297}],history:[round]};
+ const child=ui();child.draw({...result,me:'p2'});child.run('finishReveal()');
+ assert.match(child.html,/的中！/);assert.match(child.html,/あなたの予想：1・2/);assert.match(child.html,/収支 <strong class="my-result-points">-3点/);
+ const miss=ui();miss.draw({...result,me:'p2',history:[{...round,outcomes:[{...round.outcomes[0],numbers:[2],hit:false,received:0,delta:-10}]}]});miss.run('finishReveal()');
+ assert.match(miss.html,/<strong class="my-result-status">はずれ/);assert.match(miss.html,/>-10点<\/strong>/);
+ const parent=ui();parent.draw(result);parent.run('finishReveal()');
+ assert.match(parent.html,/<h2>あなたは親<\/h2>/);assert.match(parent.html,/>\+3点<\/strong>/);
+});

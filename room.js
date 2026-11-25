@@ -134,8 +134,15 @@ function questionOptions(){
 }
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
+function signedPoints(points){return (points>0?'+':'')+format(points)+'点';}
+function myRoundResult(r){
+ if(r.parent===room.me)return `<section class="box my-result my-result-parent"><h2>あなたは親</h2><p>このラウンドの収支</p><strong class="my-result-points">${signedPoints(r.parentDelta)}</strong></section>`;
+ const outcome=r.outcomes.find(o=>o.playerId===room.me);
+ if(!outcome)return '';
+ return `<section class="box my-result ${outcome.hit?'my-result-hit':'my-result-miss'}"><h2>あなたの結果</h2><strong class="my-result-status">${outcome.hit?'🎯 的中！':'はずれ'}</strong><p>あなたの予想：${outcome.numbers.join('・')}　／　正解：${r.answer}</p><p>BET ${format(outcome.stake)}点　／　受取 ${format(outcome.received)}点</p><p>このラウンドの収支 <strong class="my-result-points">${signedPoints(outcome.delta)}</strong></p></section>`;
+}
 function historyRows(r){
- const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}</b><span>${o.numbers.join('・')} ／ BET ${o.stake} ／ 受取 ${o.received}点</span></li>`).join('');
+ const list=r.outcomes.map(o=>`<li><b>${escapeHtml(memberName(o.playerId))}${o.playerId===room.me?'（あなた）':''} <span class="result-badge ${o.hit?'result-badge-hit':'result-badge-miss'}">${o.hit?'的中':'はずれ'}</span></b><span>${o.numbers.join('・')} ／ BET ${format(o.stake)} ／ 受取 ${format(o.received)}点 ／ 収支 ${signedPoints(o.delta)}</span></li>`).join('');
  const chat=r.chat?.length?`<div class="round-chat"><h3>質問と親の回答</h3><ol class="chat-list">${chatRecords(r.chat,true)}</ol></div>`:'';
  return `<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p><ul class="list">${list}</ul><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${chat}`;
 }
@@ -191,7 +198,7 @@ function renderRoom(){
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
    if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想とBETを確定</button></div>';
   }else{
-   const r=room.history.at(-1); html+=`<div class="box hero"><h2>正解</h2><strong class="win">${r.answer}　${escapeHtml(r.names[r.answer-1])}</strong></div><div class="box"><h2>今回の精算</h2>${historyRows(r)}</div>`;
+   const r=room.history.at(-1); html+=`${myRoundResult(r)}<div class="box hero"><h2>正解</h2><strong class="win">${r.answer}　${escapeHtml(r.names[r.answer-1])}</strong></div><div class="box"><h2>今回の精算</h2>${historyRows(r)}</div>`;
    if(room.stage==='result')html+=isHost||parent?'<button class="primary wide" data-act="next">次のラウンドへ</button>':'<p>次のラウンドを待っています。</p>';
   }
   if(room.stage==='finished')html+='<div class="box"><h2>最終順位</h2>'+ranking()+'</div>';else html+=panel('rank','現在の順位',ranking());
