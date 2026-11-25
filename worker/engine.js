@@ -38,7 +38,11 @@ export function validateSettings(settings) {
   integer(settings.initialPoints, 1, 100000, '初期ポイント');
   integer(settings.stake, 1, 1000, 'BET');
   integer(settings.turns, 1, 20, '1人あたりの親の回数');
-  return {...settings};
+  const questionMode = settings.questionMode ?? 'timer';
+  if (!['timer', 'chat'].includes(questionMode)) fail('質問モードの設定が不正です。');
+  const questionsPerPlayer = settings.questionsPerPlayer ?? 3;
+  integer(questionsPerPlayer, 1, 20, '質問回数');
+  return {...settings, questionMode, questionsPerPlayer};
 }
 
 export function totalRounds(game) { return game.players.length * game.settings.turns; }

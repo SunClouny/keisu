@@ -26,6 +26,19 @@ async function phraseHash(value, salt) {
 function uniqueName(room, name, self) {
   requireValue(!room.members.some(m => m.id !== self && m.name === name), 'その表示名は登録済みです。別の名前を入力してください。',409);
 }
+function chatComplete(room) {
+  if (room.settings.questionMode !== 'chat') return true;
+  const chat = room.chat;
+  if (!chat || chat.round !== room.game.rounds.length) return false;
+  const parent = parentAt(room.game).id;
+  return room.members.filter(m => m.id !== parent).every(m =>
+    chat.entries.filter(q => q.playerId === m.id && q.answer !== null).length >= room.settings.questionsPerPlayer);
+}
+function chatText(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  requireValue(text.length >= 1 && text.length <= 160 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text), '質問と回答は1〜160文字で入力してください。');
+  return text;
+}
 function view(room, self) {
   const g=room.game, base={code:room.code, me:self, host:room.members[0].id, settings:room.settings,
     revision:room.revision, expires:room.expires, members:room.members.map(({id,name})=>({id,name}))};
@@ -35,7 +48,8 @@ function view(room, self) {
   return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
     standings:standings(g), history, names:current?.names??g.rounds.at(-1)?.names, market:market(g,current?null:g.rounds.at(-1)), endsAt:room.endsAt,
     confirmed:current?Object.keys(current.bets).filter(id=>current.bets[id].locked):[],
-    myBet:current?.bets[self]??null};
+    myBet:current?.bets[self]??null,
+    chat:room.settings.questionMode==='chat' && room.chat?.round===round ? {...room.chat, complete:current ? chatComplete(room) : true} : null};
 }
 function update(room, action, b, member) {
   const g=room.game, host=room.members[0].id===member.id;
@@ -53,10 +67,29 @@ function update(room, action, b, member) {
   if(action==='secret'){
     requireValue(parent && g.draft?.stage==='secret','今回の親だけが数字を確定できます。',403);
     requireValue(Number.isInteger(b.number)&&b.number>=1&&b.number<=9,'1〜9の数字を選んでください。');
-    g.draft.secret=b.number;g.draft.stage='betting';room.endsAt=Date.now()+60000;return;
+    g.draft.secret=b.number;g.draft.stage='betting';
+    if(room.settings.questionMode==='chat') {room.chat={round:b.round, entries:[]};room.endsAt=null;}
+    else room.endsAt=Date.now()+60000;
+    return;
+  }
+  if(action==='ask' || action==='answer'){
+    requireValue(room.settings.questionMode==='chat' && g.draft?.stage==='betting' && room.chat?.round===b.round,'今はチャットを利用できません。',409);
+    const entries=room.chat.entries, pending=entries.find(q=>q.answer===null);
+    if(action==='ask'){
+      requireValue(!parent,'親は質問できません。',403);
+      requireValue(!pending,'親が前の質問に回答するまでお待ちください。',409);
+      requireValue(entries.filter(q=>q.playerId===member.id).length < room.settings.questionsPerPlayer,'質問回数を使い切りました。',409);
+      entries.push({playerId:member.id, question:chatText(b.text), answer:null});
+    }else{
+      requireValue(parent,'今回の親だけが回答できます。',403);
+      requireValue(!!pending,'回答待ちの質問がありません。',409);
+      pending.answer=chatText(b.text);
+    }
+    return;
   }
   if(action==='bet'){
     requireValue(!parent && g.draft?.stage==='betting','子の予想を受け付ける時間ではありません。',409);
+    requireValue(chatComplete(room),'全員の質問と親の回答が終わるまでお待ちください。',409);
     const bet=g.draft.bets[member.id];
     requireValue(!bet.locked,'予想は確定済みです。',409);
     requireValue(Number.isInteger(b.stake)&&b.stake>=1&&b.stake<=1000,'BETは1〜1000点の整数です。');
