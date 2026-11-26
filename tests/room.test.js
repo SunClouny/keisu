@@ -30,7 +30,7 @@ async function createThree(settings){
   await call('b','start',{},403);
   const started=await call('a','start');
   const keys=Object.fromEntries(started.members.map(member=>[member.id,Object.keys(names).find(key=>names[key]===member.name)]));
-  const parent=keys[started.parent],children=['a','b','c'].filter(id=>id!==parent);
+  const parent=keys[started.parent],children=started.standings.slice(1).map(p=>keys[p.id]);
   return {...env,started,keys,parent,children};
 }
 
@@ -222,4 +222,29 @@ test('new rooms accept only the ten available stakes; old games keep their own l
   assert.equal(oldLimit,75);
   assert.equal(validateStake(73,undefined,oldLimit),73);
   assert.throws(()=>validateStake(76,undefined,oldLimit));
+});
+
+
+test('children take repeated turns after the parent, across reentry and parent rotation',async()=>{
+ const {call,started,parent,children,keys}=await createThree({initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:2});
+ let state=await call(parent,'secret',{round:0,number:1});
+ const [first,second]=state.chat.order;
+ assert.deepEqual([first,second],started.standings.slice(1).map(p=>p.id));
+ const rejoined=await call('d','join',{name:names[children[0]],phrase:pass});
+ assert.equal(rejoined.chat.asker,first);
+ for(let i=0;i<4;i++){
+   const current=i%2===0?'d':children[1],other=i%2===0?children[1]:'d';
+   assert.equal(state.chat.asker,i%2===0?first:second);
+   await call(other,'ask',{round:0,entryCount:i,text:'先に質問'},409);
+   const asking=await call(current,'ask',{round:0,entryCount:i,text:'質問'});
+   assert.equal(asking.chat.asker,null);assert.equal(asking.chat.complete,false);
+   await call(other,'ask',{round:0,text:'回答待ち'},409);
+   await call(parent,'answer',{round:0,entryCount:i,text:'古い回答'},409);
+   state=await call(parent,'answer',{round:0,entryCount:i+1,text:'はい'});
+ }
+ assert.equal(state.chat.complete,true);assert.equal(state.chat.asker,null);
+ for(const child of ['d',children[1]])await call(child,'bet',{round:0,stake:10,numbers:[1]});
+ const next=await call(parent,'next',{round:0});assert.equal(next.parent,first);
+ const again=await call('d','secret',{round:1,number:1});
+ assert.deepEqual(again.chat.order,[second,started.parent]);assert.equal(again.chat.asker,second);
 });

@@ -31,7 +31,7 @@ function ui(){
   return {draw(data){context.input=data;vm.runInContext('draw(input)',context);},run(code){return vm.runInContext(code,context);},click(button){listeners.click({target:{closest:()=>button}});},get latest(){return latest;},get chat(){return chatList;},get html(){return html;}};
 }
 const members=[{id:'p1',name:'あき'},{id:'p2',name:'はる'}];
-function betting(entries){return {code:'ABCDEFGH2345',me:'p1',host:'p1',members,settings:{stake:10,questionMode:'chat',questionsPerPlayer:5},stage:'betting',round:0,total:2,parent:'p1',revision:entries.length+1,expires:Date.now()+100000,chat:{entries,complete:false,lieLimit:2,liesUsed:0},market:Array.from({length:9},(_,i)=>({number:i+1,base:5,adjusted:5})),names:Array(9).fill('ねこ'),history:[],standings:[],confirmed:[]};}
+function betting(entries){return {code:'ABCDEFGH2345',me:'p1',host:'p1',members,settings:{stake:10,questionMode:'chat',questionsPerPlayer:5},stage:'betting',round:0,total:2,parent:'p1',revision:entries.length+1,expires:Date.now()+100000,chat:{entries,order:['p2'],asker:'p2',complete:false,lieLimit:2,liesUsed:0},market:Array.from({length:9},(_,i)=>({number:i+1,base:5,adjusted:5})),names:Array(9).fill('ねこ'),history:[],standings:[],confirmed:[]};}
 const question=n=>({playerId:'p2',question:`質問${n}`,answer:n<4?'はい':null});
 
 test('follow new questions and in-place answers, including the last answer before betting',()=>{
@@ -116,4 +116,14 @@ test('BET buttons move one step, stop at limits and remember the wager on redraw
  page.draw({...data,revision:4});assert.match(page.html,/value="100" selected/);
  const locked={...data,myBet:{locked:true,stake:20,numbers:[1]},revision:5};
  page.draw(locked);assert.match(page.html,/賭け点を10点増やす" disabled/);
+});
+
+
+test('only the current child sees the question form and everyone sees the turn',()=>{
+ const page=ui(),base=betting([]);
+ const data={...base,members:[...members,{id:'p3',name:'ゆず'}],chat:{...base.chat,order:['p3','p2'],asker:'p3'}};
+ page.draw({...data,me:'p2'});assert.doesNotMatch(page.html,/id="question-form"/);
+ assert.match(page.html,/ゆずさんの質問の番です/);assert.match(page.html,/1番　ゆず/);
+ page.draw({...data,me:'p3'});assert.match(page.html,/id="question-form"/);assert.match(page.html,/あなたの質問の番です/);
+ page.draw({...data,me:base.parent});assert.doesNotMatch(page.html,/id="question-form"/);
 });

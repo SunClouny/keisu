@@ -26,13 +26,20 @@ async function phraseHash(value, salt) {
 function uniqueName(room, name, self) {
   requireValue(!room.members.some(m => m.id !== self && m.name === name), 'その表示名は登録済みです。別の名前を入力してください。',409);
 }
-function chatComplete(room) {
-  if (room.settings.questionMode !== 'chat') return true;
-  const chat = room.chat;
-  if (!chat || chat.round !== room.game.rounds.length) return false;
-  const parent = parentAt(room.game).id;
-  return room.members.filter(m => m.id !== parent).every(m =>
-    chat.entries.filter(q => q.playerId === m.id && q.answer !== null).length >= room.settings.questionsPerPlayer);
+function questionTurns(room) {
+  const {game,chat,settings}=room;
+  const order=Array.from({length:game.players.length-1}, (_,i)=>parentAt(game,chat.round+i+1).id);
+  const counts=new Map(order.map(id=>[id,0]));
+  let waitingForAnswer=false;
+  for(const entry of chat.entries){
+    counts.set(entry.playerId,counts.get(entry.playerId)+1);
+    if(entry.answer===null)waitingForAnswer=true;
+  }
+  // The least-used slot also lets rooms with earlier, unordered questions finish fairly.
+  const fewest=Math.min(...counts.values());
+  const complete=!waitingForAnswer && fewest>=settings.questionsPerPlayer;
+  const asker=waitingForAnswer||complete ? null : order.find(id=>counts.get(id)===fewest);
+  return {order,asker,complete};
 }
 function chatText(value) {
   const text = typeof value === 'string' ? value.trim() : '';
@@ -49,7 +56,7 @@ function view(room, self) {
   const chat=room.settings.questionMode==='chat' && room.chat?.round===round ? {
     round:room.chat.round,
     entries:room.chat.entries.map(({playerId,question,answer,isLie,isUnknown}) => ({playerId,question,answer,...(isUnknown===true?{isUnknown:true}:{}),...(self===parent || !current ? {isLie:typeof isLie==='boolean'?isLie:null} : {})})),
-    complete:current ? chatComplete(room) : true,
+    ...questionTurns(room),
     ...(self===parent && current ? {liesUsed:room.chat.entries.filter(q=>q.isLie===true).length} : {})
   } : null;
   return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
@@ -85,10 +92,12 @@ function update(room, action, b, member) {
   if(action==='ask' || action==='answer'){
     requireValue(room.settings.questionMode==='chat' && g.draft?.stage==='betting' && room.chat?.round===b.round,'今はチャットを利用できません。',409);
     const entries=room.chat.entries, pending=entries.find(q=>q.answer===null);
+    if(b.entryCount!==undefined)requireValue(b.entryCount===entries.length,'質問が更新されました。現在の順番を確認してください。',409);
     if(action==='ask'){
       requireValue(!parent,'親は質問できません。',403);
       requireValue(!pending,'親が前の質問に回答するまでお待ちください。',409);
       requireValue(entries.filter(q=>q.playerId===member.id).length < room.settings.questionsPerPlayer,'質問回数を使い切りました。',409);
+      requireValue(questionTurns(room).asker===member.id,'ほかの子の質問の番です。',409);
       entries.push({playerId:member.id, question:chatText(b.text), answer:null});
     }else{
       requireValue(parent,'今回の親だけが回答できます。',403);
@@ -104,7 +113,7 @@ function update(room, action, b, member) {
   }
   if(action==='bet'){
     requireValue(!parent && g.draft?.stage==='betting','子の予想を受け付ける時間ではありません。',409);
-    requireValue(chatComplete(room),'全員の質問と親の回答が終わるまでお待ちください。',409);
+    requireValue(room.settings.questionMode!=='chat'||(room.chat?.round===b.round && questionTurns(room).complete),'全員の質問と親の回答が終わるまでお待ちください。',409);
     if(g.splitBetRules && room.settings.questionMode==='timer'){
       requireValue(Date.now()>=room.endsAt,'質問時間が終わってから予想を確定してください。',409);
     }

@@ -194,21 +194,22 @@ function chatRecords(entries,revealed=false){
 function chatPanel(parent){
  const chat=room.chat, entries=chat?.entries??[], pending=entries.find(q=>q.answer===null);
  const used=entries.filter(q=>q.playerId===room.me).length, limit=room.settings.questionsPerPlayer;
+ const myTurn=chat.asker===room.me;
  const messages=chatRecords(entries);
  let form='';
  if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft?'checked':''}>この回答は嘘</label><button class="primary">回答を送る</button><button type="button" data-act="unknown-answer">わからない</button></form>`;
- else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}"></label><button class="primary">質問を送る</button></form>`;
+ else if(!chat.complete && !parent && myTurn && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}"></label><button class="primary">質問を送る</button></form>`;
  let status;
  if(chat.complete)status=parent||room.myBet?.locked?'質問終了。全員の予想を待っています。':'質問終了。予想を確定してください。';
  else if(pending)status=parent?`${escapeHtml(memberName(pending.playerId))}さんの質問に答えてください。`:'親の回答を待っています。';
- else if(parent)status='子からの質問を待っています。';
- else status=used<limit?`あと${limit-used}回質問できます。`:'ほかの子の質問を待っています。';
- const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
+ else if(myTurn)status=`あなたの質問の番です。残り${limit-used}回。`;
+ else status=`${escapeHtml(memberName(chat.asker))}さんの質問の番です。`;
+ const progress=chat.order.map((id,i)=>`<li>${i+1}番　${escapeHtml(memberName(id))}　${entries.filter(q=>q.playerId===id).length}/${limit}回</li>`).join('');
  return `<section class="box chat"><div class="chat-heading"><h2>質問チャット</h2><span>${entries.filter(q=>q.answer!==null).length} / ${limit*(room.members.length-1)}問 回答済み</span></div>
  <p class="chat-status" role="status">${status}</p>
  <ol id="live-chat" class="chat-list" tabindex="0" aria-label="質問と回答">${messages}</ol>
  <button type="button" class="chat-latest" data-act="chat-latest" hidden>最新の質問・回答へ</button>
- ${form}${panel('chat-progress','みんなの質問回数',`<p>${progress}</p>`)}${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}</section>`;
+ ${form}${panel('chat-progress','質問の順番と回数',`<ol class="list">${progress}</ol>`)}${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}</section>`;
 
 }
 function nearChatEnd(list){
@@ -303,7 +304,7 @@ screen.addEventListener('change',e=>{if(e.target.closest('.stake-stepper'))updat
 screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);perform(async()=>{
  if(e.target.id==='rename'){draw(await api('rename',{name:f.get('name')}));return;}
  if(e.target.id==='question-form' || e.target.id==='answer-form'){
-  const asking=e.target.id==='question-form';const data=await api(asking?'ask':'answer',{round:room.round,text:f.get('text'),...(asking?{}:{isLie:f.has('isLie')})});
+  const asking=e.target.id==='question-form';const data=await api(asking?'ask':'answer',{round:room.round,entryCount:room.chat.entries.length,text:f.get('text'),...(asking?{}:{isLie:f.has('isLie')})});
   if(asking)questionDraft='';else {answerDraft='';lieDraft=false;}draw(data,true);return;
  }
  const code=String(f.get('code')||'').replace(/[-\s]/g,'').toUpperCase();
@@ -335,7 +336,7 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
  if(a==='home'){leavePresence();clearTimeout(revealTimer);revealingKey=null;revealPhase=null;room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
  perform(async()=>{
-  if(a==='unknown-answer'){const data=await api('answer',{round:room.round,isUnknown:true});answerDraft='';lieDraft=false;draw(data,true);return;}
+  if(a==='unknown-answer'){const data=await api('answer',{round:room.round,entryCount:room.chat.entries.length,isUnknown:true});answerDraft='';lieDraft=false;draw(data,true);return;}
   if(a==='resume'){
    const code=b.dataset.code,credential=getValue(storageKey(code));
    try{if(!/^[0-9a-f]{64}$/.test(credential))throw Error('表示名と部屋の合言葉を入力してください。');await restoreRoom(code,credential);}
