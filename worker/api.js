@@ -60,7 +60,7 @@ function view(room, self) {
     ...(self===parent && current ? {liesUsed:room.chat.entries.filter(q=>q.isLie===true).length} : {})
   } : null;
   return {...base,stage:current?.stage ?? (g.completedAt?'finished':'result'),round,total:totalRounds(g),parent:parentAt(g,round).id,
-    splitBetRules:!!g.splitBetRules, maxStake:stakeLimit(g),
+    splitBetRules:!!g.splitBetRules, popularityOdds:g.rulesVersion===2, maxStake:stakeLimit(g),
     ...(current?.stage==='betting' && self===parent ? {mySecret:current.secret} : {}),
     standings:standings(g,history), history, names:current?.names??g.rounds.at(-1)?.names,
     market:current?market(g).map(m=>({...m,people:0,adjusted:m.base})):market(g,g.rounds.at(-1)), endsAt:room.endsAt,

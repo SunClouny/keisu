@@ -163,6 +163,20 @@ function questionOptions(){
  return `<section class="box question-options"><h2>数字とお題</h2><div class="grid" role="list">${room.market.map((m,i)=>`<div class="question-option" role="listitem"><b>${m.number}</b><span>${escapeHtml(room.names?.[i])}</span><small>${format(m.adjusted)}倍</small></div>`).join('')}</div></section>`;
 }
 function panel(id,title,html){return `<details data-panel="${id}" ${savedDetails.has(id)?'open':''}><summary>${title}</summary>${html}</details>`;}
+function oddsRules(){
+ const popularity=room.popularityOdds!==false;
+ const chat=room.settings.questionMode==='chat';
+ const solo=room.settings.soloBonus;
+ const items=[
+  '基本オッズは5・6・7・8・9・10・12・15・20倍です。毎ラウンド数字に割り当てられます。',
+  ...(popularity?['同じ正解を予想した人数で、基本オッズを割ります。']:[]),
+  ...(solo?[`正解を予想した人が1人だけのとき、基本5・6・7・8倍は12・11・10・9倍に上がります。${solo===2?'数字を1つだけ選んだ場合に適用されます。':''}`]:[]),
+  ...(chat?['親の嘘と「わからない」は1回につき0.5倍を上乗せします。上乗せは合計5倍までです。']:[]),
+  room.splitBetRules||!chat?'複数の数字を選ぶと、倍率を選んだ数で割ります。':'基本オッズは選んだ数字の数で割ります。嘘・わからないの上乗せは選んだ数では割りません。',
+  '賭け点に最終的な倍率を掛けて受取点を計算し、1点未満は切り捨てます。倍率は全員の予想確定後に発表します。'
+ ];
+ return panel('odds-rules','オッズの変動ルール',`<ul class="odds-rules">${items.map(item=>`<li>${item}</li>`).join('')}</ul>`);
+}
 function ranking(){return '<ol class="list">'+room.standings.map(p=>`<li><b>${p.rank}位　${escapeHtml(p.name)}</b><span>${format(p.points)}点</span></li>`).join('')+'</ol>';}
 function signedPoints(points){return (points>0?'+':'')+format(points)+'点';}
 function oddsText(outcome){
@@ -211,7 +225,7 @@ function chatPanel(parent){
  <p class="chat-status" role="status">${status}</p>
  <ol id="live-chat" class="chat-list" tabindex="0" aria-label="質問と回答">${messages}</ol>
  <button type="button" class="chat-latest" data-act="chat-latest" hidden>最新の質問・回答へ</button>
- ${form}${panel('chat-progress','質問の順番と回数',`<ol class="list">${progress}</ol>`)}${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}</section>`;
+ ${form}${oddsRules()}${panel('chat-progress','質問の順番と回数',`<ol class="list">${progress}</ol>`)}${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}</section>`;
 
 }
 function nearChatEnd(list){
@@ -249,7 +263,7 @@ function renderRoom(followChat=false){
   }else if(room.stage==='betting'){
    const chatting=room.settings.questionMode==='chat', ready=!chatting||room.chat?.complete;
    if(parent && room.mySecret)html+=`<p class="box">あなたが選んだ数字　<strong>${room.mySecret}　${escapeHtml(room.names[room.mySecret-1])}</strong></p>`;
-   html+=chatting?`${ready?chatPanel(parent):`<div class="question-layout">${chatPanel(parent)}${questionOptions()}</div>`}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
+   html+=chatting?`${ready?chatPanel(parent):`<div class="question-layout">${chatPanel(parent)}${questionOptions()}</div>`}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>${oddsRules()}`;
    if(ready) html+=`
    <div class="box"><h2>${parent?'数字とお題':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ数字を選んだ人数で基本オッズを割ります。${room.settings.soloBonus?'数字を1つだけ選び、1人だけが正解した場合、基本5・6・7・8倍は12・11・10・9倍になります。':''}倍率は全員の確定後に発表します。</p>${horses(!parent)}
    ${parent?'':`${betField()}<small>賭け点は選んだ数字に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>

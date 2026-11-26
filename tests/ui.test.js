@@ -127,3 +127,18 @@ test('only the current child sees the question form and everyone sees the turn',
  page.draw({...data,me:'p3'});assert.match(page.html,/id="question-form"/);assert.match(page.html,/あなたの質問の番です/);
  page.draw({...data,me:base.parent});assert.doesNotMatch(page.html,/id="question-form"/);
 });
+
+
+test('odds rules are available in question screens and match each room mode',()=>{
+ const page=ui(),base=betting([]),current={...base,popularityOdds:true,splitBetRules:true,settings:{...base.settings,soloBonus:2}};
+ page.draw(current);assert.match(page.html,/オッズの変動ルール/);
+ assert.match(page.html,/数字を1つだけ選んだ場合に適用/);
+ assert.match(page.html,/嘘と「わからない」は1回につき0.5倍/);
+ const timer={...current,revision:5,settings:{...current.settings,questionMode:'timer'},endsAt:Date.now()+50000,chat:null};
+ page.draw(timer);assert.match(page.html,/オッズの変動ルール/);
+ assert.doesNotMatch(page.html,/嘘と「わからない」は1回につき0.5倍/);
+ const legacy={...current,revision:6,popularityOdds:false,splitBetRules:false,settings:{...current.settings,soloBonus:undefined}};
+ page.draw(legacy);assert.doesNotMatch(page.html,/数字を1つだけ選んだ場合に適用/);
+ assert.doesNotMatch(page.html,/同じ正解を予想した人数で、基本オッズを割ります/);
+ assert.match(page.html,/上乗せは選んだ数では割りません/);
+});
