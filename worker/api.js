@@ -123,6 +123,7 @@ function update(room, action, b, member) {
     bet.numbers=validNumbers(b.numbers);bet.locked=true;
     if(Object.values(g.draft.bets).every(x=>x.locked)){
       const settled=settle(g);
+      if(room.settings.soloBonus)settled.soloBonus=room.settings.soloBonus;
       if(room.settings.questionMode==='chat' && room.chat?.round===b.round){
         settled.chat=room.chat.entries.map(({playerId,question,answer,isLie,isUnknown})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null,...(isUnknown===true?{isUnknown:true}:{})}));
         settled.unknownTransferVersion=1;
@@ -177,7 +178,7 @@ export async function handleAPI(request, bucket) {
       return reply({rooms,activeCodes});
     }
     if(b.action==='create'){
-      const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings({...b.settings,stakeStep:10});
+      const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings({...b.settings,stakeStep:10,soloBonus:2});
       const code=Array.from(crypto.getRandomValues(new Uint8Array(12)),n=>alphabet[n%alphabet.length]).join('');
       const salt=crypto.randomUUID(),room={code,salt,proof:await phraseHash(password,salt),settings,
         members:[{id:'p1',name,key}],game:null,revision:1,expires:Date.now()+lifetime,endsAt:null};

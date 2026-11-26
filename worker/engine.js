@@ -127,17 +127,19 @@ export function calculateRound(game, round) {
   const odds = roundOdds(game, round);
   const people = game.rulesVersion === 2 ? Math.max(1, popularity(game, round)[round.answer - 1]) : 1;
   const bonusTenths = round.lieBonusTenths ?? 0;
+  const soloBonus = !!round.soloBonus && people===1 ? ({5:7,6:5,7:3,8:1}[odds[round.answer-1]] ?? 0) : 0;
   const winningsAt = (bet,extra) => {
     if (!bet.numbers.includes(round.answer)) return 0;
     const stake=bet.stake ?? game.settings.stake, divisor=bet.numbers.length*people;
-    return Math.floor(stake*(odds[round.answer-1]*10+extra*(game.splitBetRules ? people : divisor))/(10*divisor));
+    return Math.floor(stake*((odds[round.answer-1]+(round.soloBonus===true||bet.numbers.length===1?soloBonus:0))*10+extra*(game.splitBetRules ? people : divisor))/(10*divisor));
   };
   const outcomes = round.bets.map(bet => {
     const stake=bet.stake ?? game.settings.stake, hit=bet.numbers.includes(round.answer);
     const divisor=bet.numbers.length*people,baseOdds=odds[round.answer-1]/divisor,lieBonus=bonusTenths/(10*(game.splitBetRules ? bet.numbers.length : 1));
     const received=winningsAt(bet,bonusTenths);
+    const individualBonus=round.soloBonus===true?soloBonus/bet.numbers.length:bet.numbers.length===1?soloBonus:0;
     return {playerId:bet.playerId,numbers:[...bet.numbers],hit,stake,received,delta:received-stake,
-      baseOdds,lieBonus,effectiveOdds:baseOdds+lieBonus,popularity:people};
+      baseOdds,soloBonus:individualBonus,lieBonus,effectiveOdds:baseOdds+individualBonus+lieBonus,popularity:people};
   });
   const parentDelta=-outcomes.reduce((sum,outcome)=>sum+outcome.delta,0);
   const unknownTransfers=[];

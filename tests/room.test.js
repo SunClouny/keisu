@@ -248,3 +248,20 @@ test('children take repeated turns after the parent, across reentry and parent r
  const again=await call('d','secret',{round:1,number:1});
  assert.deepEqual(again.chat.order,[second,started.parent]);assert.equal(again.chat.asker,second);
 });
+
+
+test('solo bonus applies only to one correct predictor and preserves previous results',()=>{
+ const game={rulesVersion:2,splitBetRules:true,settings:{stake:10},players:[{id:'p1'},{id:'p2'},{id:'p3'}]};
+ const odds=[5,6,7,8,9,10,12,15,20];
+ for(let n=1;n<=9;n++){
+  const bet={playerId:'p2',stake:100,numbers:[n]},round={answer:n,odds,bets:[bet],soloBonus:2};
+  const bonus=[7,5,3,1,0,0,0,0,0][n-1];
+  const result=calculateRound(game,round).outcomes[0];
+  assert.equal(result.received,100*(odds[n-1]+bonus));assert.equal(result.soloBonus,bonus);
+  assert.equal(calculateRound(game,{...round,soloBonus:false}).outcomes[0].received,100*odds[n-1]);
+  const split=calculateRound(game,{...round,bets:[{...bet,numbers:[n,n%9+1]}],lieBonusTenths:5}).outcomes[0];
+  assert.equal(split.received,Math.floor(100*(odds[n-1]+0.5)/2));
+  const shared=calculateRound(game,{...round,bets:[bet,{playerId:'p3',stake:100,numbers:[n]}]}).outcomes[0];
+  assert.equal(shared.soloBonus,0);assert.equal(shared.received,50*odds[n-1]);
+ }
+});

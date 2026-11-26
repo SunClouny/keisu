@@ -169,6 +169,8 @@ function oddsText(outcome){
  if(!Number.isFinite(outcome.effectiveOdds))return '';
  const base=Number.isFinite(outcome.baseOdds)?outcome.baseOdds:outcome.effectiveOdds;
  const bonus=Number.isFinite(outcome.lieBonus)?outcome.lieBonus:0;
+ const solo=Number.isFinite(outcome.soloBonus)?outcome.soloBonus:0;
+ if(solo)return `倍率：${formatOdds(outcome.effectiveOdds)}倍（基本 ${formatOdds(base)} ＋ 単独的中 ${formatOdds(solo)}${bonus?' ＋ 嘘・わからない '+formatOdds(bonus):''}）`;
  return bonus?`倍率：${formatOdds(outcome.effectiveOdds)}倍（${formatOdds(base)} ＋ 上乗せ ${formatOdds(bonus)}）`:`倍率：${formatOdds(outcome.effectiveOdds)}倍`;
 }
 function myRoundResult(r){
@@ -249,7 +251,7 @@ function renderRoom(followChat=false){
    if(parent && room.mySecret)html+=`<p class="box">あなたが選んだ数字　<strong>${room.mySecret}　${escapeHtml(room.names[room.mySecret-1])}</strong></p>`;
    html+=chatting?`${ready?chatPanel(parent):`<div class="question-layout">${chatPanel(parent)}${questionOptions()}</div>`}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
-   <div class="box"><h2>${parent?'数字とお題':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ数字を選んだ人数で基本オッズを割ります。倍率は全員の確定後に発表します。</p>${horses(!parent)}
+   <div class="box"><h2>${parent?'数字とお題':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ数字を選んだ人数で基本オッズを割ります。${room.settings.soloBonus?'数字を1つだけ選び、1人だけが正解した場合、基本5・6・7・8倍は12・11・10・9倍になります。':''}倍率は全員の確定後に発表します。</p>${horses(!parent)}
    ${parent?'':`${betField()}<small>賭け点は選んだ数字に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
    if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想を確定</button></div>';
