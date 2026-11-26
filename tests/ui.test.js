@@ -6,31 +6,55 @@ import {webcrypto} from 'node:crypto';
 
 function ui(){
   let chatList=null,html='';
-  const screen={set innerHTML(value){html=value;const match=value.match(/<ol class="chat-list" aria-label="質問と回答">([\s\S]*?)<\/ol>/);
-    chatList=match?{children:Array.from(match[1].matchAll(/class="chat-entry"/g)),scrollTop:0,get scrollHeight(){return this.children.length*120;}}:null;},
-    get innerHTML(){return html;},setAttribute(){},removeAttribute(){},addEventListener(){}};
+  const listeners={},latest={hidden:true};
+  const screen={set innerHTML(value){
+    html=value;
+    const match=value.match(/<ol id="live-chat"[^>]*>([\s\S]*?)<\/ol>/);
+    chatList=match?{scrollTop:0,clientHeight:120,
+      scrollHeight:(match[1].match(/class="chat-question"/g)||[]).length*100+(match[1].match(/class="chat-answer"/g)||[]).length*80,
+      addEventListener(){},focus(){}}:null;
+    if(chatList){
+      let position=0;
+      Object.defineProperty(chatList,'scrollTop',{get(){return position;},set(v){position=Math.max(0,Math.min(v,this.scrollHeight-this.clientHeight));}});
+    }
+   },get innerHTML(){return html;},setAttribute(){},removeAttribute(){},addEventListener(event,fn){listeners[event]=fn;}};
   const store=new Map(),storage={setItem:(k,v)=>store.set(k,String(v)),getItem:k=>store.get(k)||null,key:i=>[...store.keys()][i],get length(){return store.size;}};
   const timers=new Map();let timerId=0;
   const context=vm.createContext({
-    document:{activeElement:null,hidden:false,querySelector(selector){return selector==='#screen'?screen:selector==='#error'?{textContent:''}:selector==='.chat > .chat-list'?chatList:null;},getElementById(){return null;},addEventListener(){}},
+    document:{activeElement:null,hidden:false,querySelector(selector){return selector==='#screen'?screen:selector==='#error'?{textContent:''}:selector==='#live-chat'?chatList:selector==='[data-act="chat-latest"]'?latest:null;},getElementById(){return null;},addEventListener(){}},
     window:{matchMedia:()=>({matches:false}),addEventListener(){}},localStorage:storage,sessionStorage:storage,crypto:webcrypto,
     location:{href:'https://test.invalid/',origin:'https://test.invalid',pathname:'/'},history:{replaceState(){}},URL,AbortSignal,
     fetch:async()=>({ok:true,text:async()=>'{"ok":true}'}),setTimeout(fn){const id=++timerId;timers.set(id,fn);return id;},clearTimeout(id){timers.delete(id);},setInterval(){},console,
   });
   const publicSource=new URL('../public/room.js',import.meta.url),rootSource=new URL('../room.js',import.meta.url);
   vm.runInContext(fs.readFileSync(fs.existsSync(publicSource)?publicSource:rootSource,'utf8'),context);
-  return {draw(data){context.input=data;vm.runInContext('draw(input)',context);},run(code){return vm.runInContext(code,context);},get chat(){return chatList;},get html(){return html;}};
+  return {draw(data){context.input=data;vm.runInContext('draw(input)',context);},run(code){return vm.runInContext(code,context);},click(button){listeners.click({target:{closest:()=>button}});},get latest(){return latest;},get chat(){return chatList;},get html(){return html;}};
 }
 const members=[{id:'p1',name:'あき'},{id:'p2',name:'はる'}];
 function betting(entries){return {code:'ABCDEFGH2345',me:'p1',host:'p1',members,settings:{stake:10,questionMode:'chat',questionsPerPlayer:5},stage:'betting',round:0,total:2,parent:'p1',revision:entries.length+1,expires:Date.now()+100000,chat:{entries,complete:false,lieLimit:2,liesUsed:0},market:Array.from({length:9},(_,i)=>({number:i+1,base:5,adjusted:5})),names:Array(9).fill('ねこ'),history:[],standings:[],confirmed:[]};}
 const question=n=>({playerId:'p2',question:`質問${n}`,answer:n<4?'はい':null});
 
-test('new questions scroll to the bottom; ordinary redraws preserve the reading position',()=>{
+test('follow new questions and in-place answers, including the last answer before betting',()=>{
  const page=ui(),entries=[question(1),question(2),question(3)];
- page.draw(betting(entries));assert.equal(page.chat.scrollTop,page.chat.scrollHeight);
- page.chat.scrollTop=65;
+ const atEnd=()=>assert.equal(page.chat.scrollTop,page.chat.scrollHeight-page.chat.clientHeight);
+ page.draw(betting(entries));atEnd();
+ const pending=[...entries,question(4)];
+ page.draw(betting(pending));atEnd();
+ const answered=[...entries,{...question(4),answer:'わからない',isUnknown:true}];
+ const end=betting(answered);
+ page.draw({...end,revision:7,chat:{...end.chat,complete:true}});atEnd();
+ assert.equal(page.latest.hidden,true);
+});
+test('reading older messages preserves position through a new question and answer until latest is requested',()=>{
+ const page=ui(),entries=[question(1),question(2),question(3)];
+ page.draw(betting(entries));page.chat.scrollTop=65;
  page.draw({...betting(entries),revision:5});assert.equal(page.chat.scrollTop,65);
- page.draw({...betting([...entries,question(4)]),revision:6});assert.equal(page.chat.scrollTop,page.chat.scrollHeight);
+ page.draw({...betting([...entries,question(4)]),revision:6});assert.equal(page.chat.scrollTop,65);
+ page.draw({...betting([...entries,{...question(4),answer:'はい'}]),revision:7});
+ assert.equal(page.chat.scrollTop,65);assert.equal(page.latest.hidden,false);
+ page.click(Object.assign(page.latest,{dataset:{act:'chat-latest'}}));
+ assert.equal(page.chat.scrollTop,page.chat.scrollHeight-page.chat.clientHeight);
+ assert.equal(page.latest.hidden,true);
 });
 
 test('ranking appears after the result and before the final screen, with the parent name',()=>{
@@ -71,10 +95,25 @@ test('parent can choose unknown and the settlement shows distributions',()=>{
 
 test('stake menus offer ten choices, default to ten and preserve a confirmed bet',()=>{
  const page=ui();
- assert.match(page.html,/<select name="stake"><option value="10" selected>/);
+ assert.match(page.html,/<select id="default-bet" name="stake"[^>]*><option value="10" selected>/);
  const base=betting([]),room={...base,me:'p2',settings:{...base.settings,stakeStep:10},chat:{...base.chat,complete:true},myBet:{locked:true,numbers:[1],stake:80}};
  page.draw(room);
- const menu=page.html.match(/<select id="room-bet" disabled>(.*?)<\/select>/)[1];
+ const menu=page.html.match(/<select id="room-bet" name="stake" disabled>(.*?)<\/select>/)[1];
  assert.deepEqual([...menu.matchAll(/value="(\d+)"/g)].map(m=>Number(m[1])),[10,20,30,40,50,60,70,80,90,100]);
  assert.match(menu,/value="80" selected/);
+});
+
+
+test('BET buttons move one step, stop at limits and remember the wager on redraw',()=>{
+ const page=ui(),base=betting([]),data={...base,me:'p2',settings:{...base.settings,stakeStep:10},chat:{...base.chat,complete:true}};
+ page.draw(data);
+ const down={dataset:{act:'stake-down'}},up={dataset:{act:'stake-up'}},select={id:'room-bet',value:'10',disabled:false};
+ const group={querySelector:key=>key==='select'?select:key.includes('stake-down')?down:up};
+ for(const control of [down,up,select]) control.closest=()=>group;
+ page.click(up);assert.equal(select.value,'20');page.click(down);assert.equal(select.value,'10');assert.ok(down.disabled);
+ for(let i=0;i<10;i++)page.click(up);
+ assert.equal(select.value,'100');assert.ok(up.disabled);assert.equal(page.run('stake'),100);
+ page.draw({...data,revision:4});assert.match(page.html,/value="100" selected/);
+ const locked={...data,myBet:{locked:true,stake:20,numbers:[1]},revision:5};
+ page.draw(locked);assert.match(page.html,/賭け点を10点増やす" disabled/);
 });

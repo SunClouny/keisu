@@ -52,11 +52,26 @@ function stakeOptions(selected) {
   return `<option value="${points}" ${points===Number(selected)?'selected':''}>${points}点</option>`;
  }).join('');
 }
+function stakeStepper(id, label, value, locked=false) {
+ const points=Number(value);
+ return `<div class="stake-control"><label for="${id}">${label}</label><div class="stake-stepper">
+  <button type="button" data-act="stake-down" aria-label="賭け点を10点減らす" ${locked||points<=10?'disabled':''}>−10</button>
+  <select id="${id}" name="stake" ${locked?'disabled':''}>${stakeOptions(points)}</select>
+  <button type="button" data-act="stake-up" aria-label="賭け点を10点増やす" ${locked||points>=100?'disabled':''}>＋10</button>
+ </div></div>`;
+}
+function updateStakeControl(select) {
+ const value=Number(select.value);
+ const controls=select.closest('.stake-stepper');
+ controls.querySelector('[data-act="stake-down"]').disabled=select.disabled||value<=10;
+ controls.querySelector('[data-act="stake-up"]').disabled=select.disabled||value>=100;
+ if(select.id==='room-bet')stake=value;
+}
 function betField() {
  const locked=room.myBet?.locked, value=locked?room.myBet.stake:stake;
  const disabled=locked?'disabled':'';
  if(room.settings.stakeStep===10){
-  return `<label>賭け点（10点刻み）<select id="room-bet" ${disabled}>${stakeOptions(value)}</select></label>`;
+  return stakeStepper('room-bet','賭け点',value,locked);
  }
  const limit=room.maxStake??1000;
  return `<label>賭け点（1〜${format(limit)}点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="${limit}" value="${escapeHtml(value)}" ${disabled}></label>`;
@@ -71,7 +86,7 @@ function lobbyForm(){
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
  ${joining?'<p class="hint">再入室には前と同じ表示名と合言葉を使います。</p>':''}
- ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準の賭け点<select name="stake">${stakeOptions(10)}</select></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
+ ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label>${stakeStepper('default-bet','標準の賭け点',10)}<label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <fieldset class="mode-choice"><legend>質問の進め方</legend><div class="mode-options"><label><input type="radio" name="questionMode" value="chat" checked><span>💬 チャットで質問</span></label><label><input type="radio" name="questionMode" value="timer"><span>⏱ 制限時間（1分）</span></label></div></fieldset>
  <label id="question-count-label">質問回数（子1人あたり）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" required></label>`}
  <button class="primary">${joining?'参加する':'部屋を作る'}</button></form>
@@ -117,7 +132,7 @@ function showStandings(){
  const key=revealingKey,duration=reduced?1000:Math.min(10000,1800+room.standings.length*650);
  revealTimer=setTimeout(()=>{if(revealingKey===key&&revealPhase==='standings')finishReveal();},duration);
 }
-function draw(data){
+function draw(data,followChat=false){
  if(room && data.code===room.code && data.revision<room.revision)return;
  const resultKey=data.code+':'+data.round;
  const isResult=data.stage==='result'||data.stage==='finished';
@@ -129,13 +144,13 @@ function draw(data){
   else {revealingKey=resultKey;revealPhase='number';beginReveal=true;}
  }
  const nextKey=data.code+'/'+data.round+'/'+data.stage;
- if(viewKey!==nextKey){chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
+ if(viewKey!==nextKey){followChat=true;chosen=[];stake=data.settings.stake;savedDetails.clear();questionDraft='';answerDraft='';lieDraft=false;viewKey=nextKey;}
  room=data;roomCode=data.code;rememberRoom(data);heartbeat();
  if(beginReveal){const duration=window.matchMedia('(prefers-reduced-motion: reduce)').matches?200:3800;
   revealTimer=setTimeout(()=>{if(revealingKey===resultKey&&revealPhase==='number')showStandings();},duration);
  }
  try{const url=new URL(location.href);url.searchParams.set('room',roomCode);history.replaceState(null,'',url);}catch{}
- renderRoom();
+ renderRoom(followChat);
 }
 function horses(interactive){
  const locked=room.myBet?.locked;
@@ -169,7 +184,12 @@ function historyRows(r,includeAnswer=true){
  return `${includeAnswer?`<p>親　${escapeHtml(memberName(r.parent))} ／ 正解 ${r.answer}　${escapeHtml(r.names[r.answer-1])}</p>`: ''}${r.chat?`<p>親の嘘：${r.lieCount??r.chat.filter(q=>q.isLie===true).length}回 ／ わからない：${r.chat.filter(q=>q.isUnknown===true).length}回 ／ ${r.lieBonusTenths===undefined?'嘘の上乗せなし（以前のルール）':`1点予想の上乗せ：${formatOdds(r.lieBonusTenths/10)}倍`}</p>`:''}<ul class="list">${list}</ul><p>親：${escapeHtml(memberName(r.parent))}の収支　${r.parentDelta>0?'+':''}${r.parentDelta}点</p>${transfers}${chat}`;
 }
 function chatRecords(entries,revealed=false){
- return entries.map(q=>`<li class="chat-entry"><strong>${escapeHtml(memberName(q.playerId))}の質問</strong><p>${escapeHtml(q.question)}</p>${q.answer===null?'<small>親の回答待ち</small>':`<strong>親の回答</strong>${q.isUnknown===true?'':q.isLie===true?' <span class="lie-badge">嘘</span>':revealed&&q.isLie===null?' <small>嘘の記録なし</small>':''}<p>${escapeHtml(q.answer)}</p>`}</li>`).join('');
+ return entries.map((q,index)=>{
+  const badge=q.isLie===true?' <span class="lie-badge">嘘</span>':revealed&&q.isLie===null?' <small>嘘の記録なし</small>':'';
+  const answer=q.answer===null?'<small class="chat-pending">回答待ち</small>':
+   `<div class="chat-answer"><strong>親の回答</strong>${badge}<p>${escapeHtml(q.answer)}</p></div>`;
+  return `<li class="chat-entry"><div class="chat-question"><strong>質問 ${index+1} · ${escapeHtml(memberName(q.playerId))}</strong><p>${escapeHtml(q.question)}</p></div>${answer}</li>`;
+ }).join('');
 }
 function chatPanel(parent){
  const chat=room.chat, entries=chat?.entries??[], pending=entries.find(q=>q.answer===null);
@@ -178,13 +198,26 @@ function chatPanel(parent){
  let form='';
  if(!chat.complete && parent && pending) form=`<form id="answer-form" class="form"><label>回答<input id="answer-text" name="text" maxlength="160" required value="${escapeHtml(answerDraft)}"></label><label class="lie-check"><input id="answer-lie" type="checkbox" name="isLie" ${lieDraft?'checked':''}>この回答は嘘</label><button class="primary">回答を送る</button><button type="button" data-act="unknown-answer">わからない</button></form>`;
  else if(!chat.complete && !parent && used<limit && !pending) form=`<form id="question-form" class="form"><label>質問<input id="question-text" name="text" maxlength="160" required value="${escapeHtml(questionDraft)}"></label><button class="primary">質問を送る</button></form>`;
- let status=chat.complete?'質問終了':parent?(pending?'回答待ちの質問があります。':'子からの質問を待っています。'):(used>=limit?'あなたの質問は終了しました。':pending?'親の回答を待っています。':`あと${limit-used}回質問できます`);
+ let status;
+ if(chat.complete)status=parent||room.myBet?.locked?'質問終了。全員の予想を待っています。':'質問終了。予想を確定してください。';
+ else if(pending)status=parent?`${escapeHtml(memberName(pending.playerId))}さんの質問に答えてください。`:'親の回答を待っています。';
+ else if(parent)status='子からの質問を待っています。';
+ else status=used<limit?`あと${limit-used}回質問できます。`:'ほかの子の質問を待っています。';
  const progress=room.members.filter(m=>m.id!==room.parent).map(m=>`${escapeHtml(m.name)}：${entries.filter(q=>q.playerId===m.id).length}/${limit}回`).join(' ／ ');
- return `<section class="box chat"><h2>質問チャット</h2><p>${status}</p><p class="hint">${progress}</p>${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}<ol class="chat-list" aria-label="質問と回答">${messages}</ol>${form}</section>`;
+ return `<section class="box chat"><div class="chat-heading"><h2>質問チャット</h2><span>${entries.filter(q=>q.answer!==null).length} / ${limit*(room.members.length-1)}問 回答済み</span></div>
+ <p class="chat-status" role="status">${status}</p>
+ <ol id="live-chat" class="chat-list" tabindex="0" aria-label="質問と回答">${messages}</ol>
+ <button type="button" class="chat-latest" data-act="chat-latest" hidden>最新の質問・回答へ</button>
+ ${form}${panel('chat-progress','みんなの質問回数',`<p>${progress}</p>`)}${panel('chat-rules','嘘と「わからない」のルール',`<p>嘘は何回でも使えます。嘘や「わからない」1回につき、的中時の倍率に0.5倍を足します（合計＋5倍まで）。${room.splitBetRules?'数字をいくつか選ぶと、上乗せ分もその個数で割ります。':''}嘘は結果発表で公開します。</p><p>「わからない」も質問1回分です。質問した子の負担は、親が余分に払った点数と同じです。${room.members.length===2?'2人対戦では質問した子からその点数を引きます。':'その点数をほかの子で分けます。'}的中者がいなければ負担はありません。</p>`)}</section>`;
+
 }
-function renderRoom(){
+function nearChatEnd(list){
+ return list.scrollHeight-list.clientHeight-list.scrollTop<=16;
+}
+function renderRoom(followChat=false){
  const active=document.activeElement,id=active?.id,pos=active?.selectionStart;
- const oldChat=document.querySelector('.chat > .chat-list'), oldChatCount=oldChat?.children.length??0, oldChatTop=oldChat?.scrollTop??0;
+ const oldChat=document.querySelector('#live-chat'),oldChatTop=oldChat?.scrollTop??0;
+ const followLatest=followChat||!oldChat||nearChatEnd(oldChat);
  const isHost=room.me===room.host,parent=room.me===room.parent;
  const myName=escapeHtml(memberName(room.me)),parentName=escapeHtml(memberName(room.parent));
  if(revealingKey===room.code+':'+room.round && (room.stage==='result'||room.stage==='finished')){
@@ -213,7 +246,7 @@ function renderRoom(){
   }else if(room.stage==='betting'){
    const chatting=room.settings.questionMode==='chat', ready=!chatting||room.chat?.complete;
    if(parent && room.mySecret)html+=`<p class="box">あなたが選んだ数字　<strong>${room.mySecret}　${escapeHtml(room.names[room.mySecret-1])}</strong></p>`;
-   html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
+   html+=chatting?`${ready?chatPanel(parent):`<div class="question-layout">${chatPanel(parent)}${questionOptions()}</div>`}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
    <div class="box"><h2>${parent?'数字とお題':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ数字を選んだ人数で基本オッズを割ります。倍率は全員の確定後に発表します。</p>${horses(!parent)}
    ${parent?'':`${betField()}<small>賭け点は選んだ数字に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
@@ -229,8 +262,15 @@ function renderRoom(){
  html+=panel('invite','部屋情報と招待',`<p>部屋ID <span class="code">${room.code}</span></p><button data-act="copy">招待リンクをコピー</button><p class="hint">「部屋に入る」から同じ表示名と合言葉でも戻れます。</p><button data-act="home">開始画面へ</button>`);
  const draftName=document.querySelector('#rename-name')?.value;
  screen.innerHTML=html;
- const newChat=document.querySelector('.chat > .chat-list');
- if(newChat)newChat.scrollTop=(!oldChat||newChat.children.length>oldChatCount)?newChat.scrollHeight:oldChatTop;
+ const newChat=document.querySelector('#live-chat');
+ if(newChat){
+  const latest=document.querySelector('[data-act="chat-latest"]');
+  const syncLatest=()=>{latest.hidden=nearChatEnd(newChat);};
+  newChat.scrollTop=followLatest?newChat.scrollHeight:oldChatTop;
+  syncLatest();
+  newChat.addEventListener('scroll',syncLatest,{passive:true});
+  if(id==='live-chat')newChat.focus({preventScroll:true});
+ }
  const renameField=document.querySelector('#rename-name');
  if(id==='rename-name'&&draftName!=null&&renameField)renameField.value=draftName;
  if(id && ['room-bet','rename-name','question-text','answer-text'].includes(id)){const f=document.getElementById(id);if(f&&!f.disabled){f.focus({preventScroll:true});if(f.type==='text'&&pos!=null)f.setSelectionRange(pos,pos);}}
@@ -259,12 +299,12 @@ async function perform(fn){
 }
 screen.addEventListener('toggle',e=>{const id=e.target.dataset.panel;if(id){if(e.target.open)savedDetails.add(id);else savedDetails.delete(id);}},true);
 screen.addEventListener('input',e=>{if(e.target.id==='room-bet')stake=e.target.value;if(e.target.name==='name'&&!room)savedName=e.target.value;if(e.target.id==='question-text')questionDraft=e.target.value;if(e.target.id==='answer-text')answerDraft=e.target.value;});
-screen.addEventListener('change',e=>{if(e.target.name==='questionMode'){const chat=e.target.value==='chat';document.querySelector('#question-count-label').hidden=!chat;document.querySelector('#question-count').disabled=!chat;}if(e.target.id==='answer-lie')lieDraft=e.target.checked;});
+screen.addEventListener('change',e=>{if(e.target.closest('.stake-stepper'))updateStakeControl(e.target);if(e.target.name==='questionMode'){const chat=e.target.value==='chat';document.querySelector('#question-count-label').hidden=!chat;document.querySelector('#question-count').disabled=!chat;}if(e.target.id==='answer-lie')lieDraft=e.target.checked;});
 screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target);perform(async()=>{
  if(e.target.id==='rename'){draw(await api('rename',{name:f.get('name')}));return;}
  if(e.target.id==='question-form' || e.target.id==='answer-form'){
   const asking=e.target.id==='question-form';const data=await api(asking?'ask':'answer',{round:room.round,text:f.get('text'),...(asking?{}:{isLie:f.has('isLie')})});
-  if(asking)questionDraft='';else {answerDraft='';lieDraft=false;}draw(data);return;
+  if(asking)questionDraft='';else {answerDraft='';lieDraft=false;}draw(data,true);return;
  }
  const code=String(f.get('code')||'').replace(/[-\s]/g,'').toUpperCase();
  const candidate=newToken();
@@ -273,6 +313,20 @@ screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.t
 });});
 screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]');if(!b||b.disabled||busy)return;
  const a=b.dataset.act;
+ if(a==='stake-down'||a==='stake-up'){
+  const select=b.closest('.stake-stepper').querySelector('select');
+  if(select.disabled)return;
+  select.value=String(Math.min(100,Math.max(10,Number(select.value)+(a==='stake-up'?10:-10))));
+  updateStakeControl(select);
+  return;
+ }
+ if(a==='chat-latest'){
+  const list=document.querySelector('#live-chat');
+  list.scrollTop=list.scrollHeight;
+  list.focus({preventScroll:true});
+  b.hidden=true;
+  return;
+ }
  if(a==='refresh-rooms'){loadRooms();return;}
  if(a==='select-room'){roomCode=b.dataset.code;const field=document.querySelector('#entry input[name="code"]');if(field)field.value=roomCode;document.querySelector('#entry input[name="phrase"]')?.focus();return;}
  if(a==='reveal-skip'){showStandings();return;}
@@ -281,7 +335,7 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
  if(a==='pick'){const n=Number(b.dataset.number);chosen=room.stage==='secret'?[n]:chosen.includes(n)?chosen.filter(v=>v!==n):[...chosen,n];renderRoom();return;}
  if(a==='home'){leavePresence();clearTimeout(revealTimer);revealingKey=null;revealPhase=null;room=null;token='';chosen=[];viewKey='';savedName='';savedDetails.clear();history.replaceState(null,'',location.pathname);roomCode='';lobbyForm();return;}
  perform(async()=>{
-  if(a==='unknown-answer'){const data=await api('answer',{round:room.round,isUnknown:true});answerDraft='';lieDraft=false;draw(data);return;}
+  if(a==='unknown-answer'){const data=await api('answer',{round:room.round,isUnknown:true});answerDraft='';lieDraft=false;draw(data,true);return;}
   if(a==='resume'){
    const code=b.dataset.code,credential=getValue(storageKey(code));
    try{if(!/^[0-9a-f]{64}$/.test(credential))throw Error('表示名と部屋の合言葉を入力してください。');await restoreRoom(code,credential);}
