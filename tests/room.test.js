@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {handleAPI} from '../worker/api.js';
 import {NOUNS} from '../worker/nouns.js';
-import {calculateRound} from '../worker/engine.js';
+import {calculateRound,validateStake,stakeLimit} from '../worker/engine.js';
 
 function setup(){
   const entries=new Map();let sequence=0;
@@ -43,17 +43,17 @@ test('random order preserves identities, private choices and correct settlement'
   assert.equal(betting.stage,'betting');assert.equal('secret' in betting,false);
   assert.equal(betting.mySecret,1);
   assert.equal('mySecret' in await call(children[0],'state'),false);
-  assert.equal(betting.maxStake,30);
+  assert.equal(betting.maxStake,100);
   t.mock.method(Date,'now',()=>betting.endsAt-1);
   await call(children[0],'bet',{round:0,stake:10,numbers:[1]},409);
   Date.now.mock.mockImplementation(()=>betting.endsAt);
   await call(children[0],'bet',{round:0,stake:31,numbers:[1]},400);
   await call(children[0],'bet',{round:0,stake:0,numbers:[1]},400);
   const base=betting.market[0].base;
-  await Promise.all([call(children[0],'bet',{round:0,stake:13,numbers:[1]}),call(children[1],'bet',{round:0,stake:27,numbers:[1,3]})]);
+  await Promise.all([call(children[0],'bet',{round:0,stake:10,numbers:[1]}),call(children[1],'bet',{round:0,stake:30,numbers:[1,3]})]);
   const ended=await call(parent,'state'),round=ended.history[0];
   assert.equal(ended.stage,'result');assert.equal(round.parent,started.parent);assert.equal(round.totalStakes,40);
-  assert.equal(round.totalPayout,Math.floor(13*base/2)+Math.floor(27*base/4));
+  assert.equal(round.totalPayout,Math.floor(10*base/2)+Math.floor(30*base/4));
   assert.equal(ended.standings.reduce((n,p)=>n+p.points,0),900);
   assert.deepEqual(round.names,started.names);
   const next=await call('a','next',{round:0});assert.equal(next.parent,started.standings[1].id);assert.equal(next.stage,'secret');
@@ -207,4 +207,19 @@ test('two players can finish a match, take one parent turn each and rejoin at th
   const rejoined=await call('c','join',{name:names.a,phrase:pass});
   assert.equal(rejoined.me,created.me);
   assert.deepEqual(rejoined.standings,view.standings);
+});
+
+
+test('new rooms accept only the ten available stakes; old games keep their own limits',async()=>{
+  const {call}=setup();
+  const settings={initialPoints:300,stake:75,turns:1};
+  await call('a','create',{name:names.a,phrase:pass,settings},400);
+  const created=await call('a','create',{name:names.a,phrase:pass,settings:{...settings,stake:100}},201);
+  assert.equal(created.settings.stakeStep,10);
+  for(let points=10;points<=100;points+=10) assert.equal(validateStake(points,10,100),points);
+  for(const points of [0,1,9,75,101,110]) assert.throws(()=>validateStake(points,10,100));
+  const oldLimit=stakeLimit({splitBetRules:true,settings:{stake:25}});
+  assert.equal(oldLimit,75);
+  assert.equal(validateStake(73,undefined,oldLimit),73);
+  assert.throws(()=>validateStake(76,undefined,oldLimit));
 });

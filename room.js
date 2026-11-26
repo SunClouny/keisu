@@ -46,6 +46,21 @@ async function restoreRoom(code,credential){
 }
 function say(text){errorBox.textContent=text;}
 function memberName(id){return room?.members.find(m=>m.id===id)?.name??'';}
+function stakeOptions(selected) {
+ return Array.from({length:10}, (_,index)=>{
+  const points=(index+1)*10;
+  return `<option value="${points}" ${points===Number(selected)?'selected':''}>${points}点</option>`;
+ }).join('');
+}
+function betField() {
+ const locked=room.myBet?.locked, value=locked?room.myBet.stake:stake;
+ const disabled=locked?'disabled':'';
+ if(room.settings.stakeStep===10){
+  return `<label>賭け点（10点刻み）<select id="room-bet" ${disabled}>${stakeOptions(value)}</select></label>`;
+ }
+ const limit=room.maxStake??1000;
+ return `<label>賭け点（1〜${format(limit)}点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="${limit}" value="${escapeHtml(value)}" ${disabled}></label>`;
+}
 function lobbyForm(){
  const joining=mode==='join';
  screen.innerHTML=`<section class="lobby-hero"><div><h1>数読みダービー</h1><p>お題について親に質問して、親が選んだ数字を当てよう。<br>2〜10人用</p></div><div class="hero-cards" aria-hidden="true"><span>?</span><span>9</span><span>1</span></div></section>
@@ -56,7 +71,7 @@ function lobbyForm(){
  ${joining?`<label>部屋ID<input name="code" minlength="12" maxlength="16" required value="${escapeHtml(roomCode)}" autocapitalize="characters" spellcheck="false" placeholder="招待リンクから自動入力"></label>`:''}
  <label>合言葉<input name="phrase" type="password" minlength="4" maxlength="64" required autocomplete="off" placeholder="${joining?'作成者が決めた合言葉':'4〜64文字で設定'}"></label>
  ${joining?'<p class="hint">再入室には前と同じ表示名と合言葉を使います。</p>':''}
- ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準の賭け点<input type="number" name="stake" min="1" max="1000" value="10" required><small>上限はこの3倍（最大1,000点）</small></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
+ ${joining?'':`<div class="columns"><label>初期ポイント<input type="number" name="points" min="1" max="100000" value="300" required></label><label>標準の賭け点<select name="stake">${stakeOptions(10)}</select></label><label>親の回数（1人あたり）<input type="number" name="turns" min="1" max="20" value="2" required></label></div>
  <fieldset class="mode-choice"><legend>質問の進め方</legend><div class="mode-options"><label><input type="radio" name="questionMode" value="chat" checked><span>💬 チャットで質問</span></label><label><input type="radio" name="questionMode" value="timer"><span>⏱ 制限時間（1分）</span></label></div></fieldset>
  <label id="question-count-label">質問回数（子1人あたり）<input type="number" name="questionsPerPlayer" id="question-count" min="1" max="20" value="3" required></label>`}
  <button class="primary">${joining?'参加する':'部屋を作る'}</button></form>
@@ -201,7 +216,7 @@ function renderRoom(){
    html+=chatting?`${ready?'':questionOptions()}${chatPanel(parent)}`:`<div class="box hero"><h2>質問タイム</h2><strong class="amount" id="timer">01:00</strong><p>${parent?'質問には嘘で答えてもOKです。':'親に質問し、答えを予想してください。'}</p></div>`;
    if(ready) html+=`
    <div class="box"><h2>${parent?'数字とお題':room.myBet?.locked?'あなたの確定予想':'あなたの予想'}</h2><p class="hint">同じ数字を選んだ人数で基本オッズを割ります。倍率は全員の確定後に発表します。</p>${horses(!parent)}
-   ${parent?'':`<label>賭け点（1〜${format(room.maxStake??1000)}点）<input id="room-bet" type="number" inputmode="numeric" min="1" max="${room.maxStake??1000}" value="${escapeHtml(room.myBet?.locked?room.myBet.stake:stake)}" ${room.myBet?.locked?'disabled':''}></label><small>賭け点は選んだ数字に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
+   ${parent?'':`${betField()}<small>賭け点は選んだ数字に均等に分けます。${chatting && !room.splitBetRules?'上乗せ分は賭け点の全額にかかります。':''}受取は1点未満を切り捨てます。</small>`}</div>
    <p>予想確定　${room.confirmed.length} / ${room.members.length-1}人　${room.confirmed.map(id=>escapeHtml(memberName(id))).join('、')}</p>`;
    if(ready&&!parent&&!room.myBet?.locked)html+='<div class="bottom"><button class="primary" data-act="bet" '+(chosen.length?'':'disabled')+'>予想を確定</button></div>';
   }else{
@@ -276,7 +291,12 @@ screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]
   if(a==='copy'){const link=new URL(location.href);link.searchParams.set('room',room.code);try{await navigator.clipboard.writeText(link.href);say('招待リンクをコピーしました。合言葉は別途伝えてください。');}catch{say(link.href);}return;}
   const payload={round:room.round};
   if(a==='secret')payload.number=chosen[0];
-  if(a==='bet'){payload.numbers=chosen;payload.stake=Number(stake);if(!Number.isInteger(payload.stake)||payload.stake<1||payload.stake>(room.maxStake??1000))throw Error(`賭け点は1〜${room.maxStake??1000}点で入力してください。`);}
+  if(a==='bet'){
+   payload.numbers=chosen;
+   payload.stake=Number(stake);
+   if(room.settings.stakeStep===10 && (payload.stake<10 || payload.stake%10!==0))throw Error('賭け点は10点刻みで選んでください。');
+   if(!Number.isInteger(payload.stake)||payload.stake<1||payload.stake>(room.maxStake??1000))throw Error(`賭け点は1〜${room.maxStake??1000}点で入力してください。`);
+  }
   draw(await api(a,payload));
  });
 });

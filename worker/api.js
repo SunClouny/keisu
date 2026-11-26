@@ -1,4 +1,4 @@
-import {createGame, validateSettings, totalRounds, parentAt, stakeLimit, market, calculateRound, standings, settle, advance, validNumbers} from './engine.js';
+import {createGame, validateSettings, totalRounds, parentAt, stakeLimit, validateStake, market, calculateRound, standings, settle, advance, validNumbers} from './engine.js';
 
 const lifetime = 24 * 60 * 60 * 1000;
 const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -110,8 +110,8 @@ function update(room, action, b, member) {
     }
     const bet=g.draft.bets[member.id];
     requireValue(!bet.locked,'予想は確定済みです。',409);
-    requireValue(Number.isInteger(b.stake)&&b.stake>=1&&b.stake<=stakeLimit(g),`賭け点は1〜${stakeLimit(g)}点で入力してください。`);
-    bet.stake=b.stake;bet.numbers=validNumbers(b.numbers);bet.locked=true;
+    bet.stake=validateStake(b.stake,room.settings.stakeStep,stakeLimit(g));
+    bet.numbers=validNumbers(b.numbers);bet.locked=true;
     if(Object.values(g.draft.bets).every(x=>x.locked)){
       const settled=settle(g);
       if(room.settings.questionMode==='chat' && room.chat?.round===b.round){
@@ -168,7 +168,7 @@ export async function handleAPI(request, bucket) {
       return reply({rooms,activeCodes});
     }
     if(b.action==='create'){
-      const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings(b.settings);
+      const name=cleanName(b.name),password=phrase(b.phrase),settings=validateSettings({...b.settings,stakeStep:10});
       const code=Array.from(crypto.getRandomValues(new Uint8Array(12)),n=>alphabet[n%alphabet.length]).join('');
       const salt=crypto.randomUUID(),room={code,salt,proof:await phraseHash(password,salt),settings,
         members:[{id:'p1',name,key}],game:null,revision:1,expires:Date.now()+lifetime,endsAt:null};
@@ -214,7 +214,7 @@ export async function handleAPI(request, bucket) {
     }
     return reply({error:'操作が重なりました。もう一度お試しください。'},409);
   } catch(error){
-    const inputError = /予想|BET|数字|初期ポイント|親の回数|設定/.test(error.message);
+    const inputError = /予想|賭け点|BET|数字|初期ポイント|親の回数|設定/.test(error.message);
     const status = error.status ?? (inputError ? 400 : 500);
     return reply({error: status < 500 ? error.message : '接続を確認して、もう一度お試しください。'}, status);
   }

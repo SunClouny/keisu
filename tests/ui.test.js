@@ -67,3 +67,14 @@ test('parent can choose unknown and the settlement shows distributions',()=>{
  const result={...base,stage:'result',revision:10,standings:[{rank:1,name:'あき',points:300},{rank:1,name:'はる',points:300}],history:[{number:1,parent:'p1',answer:1,names:Array(9).fill('ねこ'),chat:[{playerId:'p2',question:'質問',answer:'わからない',isUnknown:true,isLie:false}],lieCount:0,lieBonusTenths:5,unknownTransfers:[{playerId:'p2',amount:5,shares:[]}],outcomes:[{playerId:'p2',numbers:[1],hit:true,stake:10,received:55,delta:40,baseOdds:5,lieBonus:0.5,effectiveOdds:5.5}],parentDelta:-45}]};
  page.draw(result);page.run('finishReveal()');assert.match(page.html,/「わからない」の精算/);assert.match(page.html,/はるの負担　-5点/);assert.match(page.html,/分配先なし/);
 });
+
+
+test('stake menus offer ten choices, default to ten and preserve a confirmed bet',()=>{
+ const page=ui();
+ assert.match(page.html,/<select name="stake"><option value="10" selected>/);
+ const base=betting([]),room={...base,me:'p2',settings:{...base.settings,stakeStep:10},chat:{...base.chat,complete:true},myBet:{locked:true,numbers:[1],stake:80}};
+ page.draw(room);
+ const menu=page.html.match(/<select id="room-bet" disabled>(.*?)<\/select>/)[1];
+ assert.deepEqual([...menu.matchAll(/value="(\d+)"/g)].map(m=>Number(m[1])),[10,20,30,40,50,60,70,80,90,100]);
+ assert.match(menu,/value="80" selected/);
+});

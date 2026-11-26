@@ -36,7 +36,7 @@ const stamp = value => typeof value === 'string' && Number.isFinite(Date.parse(v
 export function validateSettings(settings) {
   if (!record(settings)) fail('対戦設定を読み取れません。');
   integer(settings.initialPoints, 1, 100000, '初期ポイント');
-  integer(settings.stake, 1, 1000, 'BET');
+  validateStake(settings.stake, settings.stakeStep, 1000);
   integer(settings.turns, 1, 20, '1人あたりの親の回数');
   const questionMode = settings.questionMode ?? 'timer';
   if (!['timer', 'chat'].includes(questionMode)) fail('質問モードの設定が不正です。');
@@ -45,7 +45,18 @@ export function validateSettings(settings) {
   return {...settings, questionMode, questionsPerPlayer};
 }
 
+export function validateStake(value, step, limit) {
+  if (step === 10) {
+    if (!Number.isInteger(value) || value < 10 || value > 100 || value % 10 !== 0) {
+      fail('賭け点は10〜100点の中から10点刻みで選んでください。');
+    }
+    return value;
+  }
+  return integer(value, 1, limit, 'BET');
+}
+
 export function stakeLimit(game) {
+  if (game.settings.stakeStep === 10) return 100;
   return game.splitBetRules ? Math.min(1000, game.settings.stake * 3) : 1000;
 }
 
@@ -107,7 +118,7 @@ function validateRound(game, round, index) {
   const ids = new Set();
   for (const bet of round.bets) {
     if (!record(bet) || !children.some(p => p.id === bet.playerId) || ids.has(bet.playerId)) fail('予想した参加者の記録が不正です。');
-    if (bet.stake !== undefined) integer(bet.stake,1,1000,'BET');
+    if (bet.stake !== undefined) validateStake(bet.stake,game.settings.stakeStep,1000);
     ids.add(bet.playerId); validNumbers(bet.numbers);
   }
 }
@@ -182,7 +193,7 @@ export function settle(game) {
   const children = game.players.filter(p => p.id !== parentAt(game).id);
   const bets = children.map(p => {
     if (!d.bets[p.id]?.locked) fail('全員の予想を確定してください。');
-    return {playerId: p.id, stake: integer(d.bets[p.id].stake ?? game.settings.stake, 1, 1000, 'BET'), numbers: validNumbers(d.bets[p.id].numbers)};
+    return {playerId: p.id, stake: validateStake(d.bets[p.id].stake ?? game.settings.stake, game.settings.stakeStep, stakeLimit(game)), numbers: validNumbers(d.bets[p.id].numbers)};
   });
   const round = {index: game.rounds.length, parentId: parentAt(game).id, answer: d.secret, names: d.names, odds: [...(d.odds ?? ODDS)], bets, settledAt: new Date().toISOString()};
   validateRound(game, round, round.index);
@@ -234,7 +245,7 @@ export function validateGame(game) {
     for (const p of children) {
       const b = d.bets[p.id];
       if (!record(b) || typeof b.locked !== 'boolean') fail('予想の入力状態が不正です。');
-      if (b.stake !== undefined) integer(b.stake,1,1000,'BET');
+      if (b.stake !== undefined) validateStake(b.stake,game.settings.stakeStep,1000);
       validNumbers(b.numbers, !b.locked);
     }
     const timer = d.timer;
