@@ -36,7 +36,8 @@ const stamp = value => typeof value === 'string' && Number.isFinite(Date.parse(v
 export function validateSettings(settings) {
   if (!record(settings)) fail('対戦設定を読み取れません。');
   integer(settings.initialPoints, 1, 100000, '初期ポイント');
-  validateStake(settings.stake, settings.stakeStep, 1000);
+  validateStake(settings.stake, settings.stakeStep, settings.stakeStep===10?100:1000);
+  if(settings.finalBetBoost!==undefined && typeof settings.finalBetBoost!=='boolean') fail('最終ラウンドの設定が不正です。');
   integer(settings.turns, 1, 20, '1人あたりの親の回数');
   const questionMode = settings.questionMode ?? 'timer';
   if (!['timer', 'chat'].includes(questionMode)) fail('質問モードの設定が不正です。');
@@ -47,8 +48,8 @@ export function validateSettings(settings) {
 
 export function validateStake(value, step, limit) {
   if (step === 10) {
-    if (!Number.isInteger(value) || value < 10 || value > 100 || value % 10 !== 0) {
-      fail('賭け点は10〜100点の中から10点刻みで選んでください。');
+    if (!Number.isInteger(value) || value < 10 || value > limit || value % 10 !== 0) {
+      fail(`賭け点は10〜${limit}点の中から10点刻みで選んでください。`);
     }
     return value;
   }
@@ -56,7 +57,7 @@ export function validateStake(value, step, limit) {
 }
 
 export function stakeLimit(game) {
-  if (game.settings.stakeStep === 10) return 100;
+  if (game.settings.stakeStep === 10) return game.settings.finalBetBoost && game.rounds.length===totalRounds(game)-1 ? 150 : 100;
   return game.splitBetRules ? Math.min(1000, game.settings.stake * 3) : 1000;
 }
 

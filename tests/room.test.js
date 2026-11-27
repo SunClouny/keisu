@@ -265,3 +265,27 @@ test('solo bonus applies only to one correct predictor and preserves previous re
   assert.equal(shared.soloBonus,0);assert.equal(shared.received,50*odds[n-1]);
  }
 });
+
+test('final round boost permits 150 only in the final round and records answer time',async()=>{
+ const {call,setCode}=setup();
+ const created=await call('a','create',{name:'あき',phrase:pass,settings:{initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:1,finalBetBoost:true}},201);
+ setCode(created.code);await call('b','join',{name:'はる',phrase:pass});
+ let v=await call('a','start');
+ for(let round=0;round<2;round++){
+  const parent=v.members.find(m=>m.id===v.parent).name==='あき'?'a':'b',child=parent==='a'?'b':'a';
+  v=await call(parent,'secret',{round,number:1});assert.equal(v.maxStake,round===0?100:150);
+  await call(child,'ask',{round,text:'質問'});await call(parent,'answer',{round,text:'はい'});
+  if(round===0)await call(child,'bet',{round,stake:150,numbers:[1]},400);
+  v=await call(child,'bet',{round,stake:round===0?100:150,numbers:[1]});
+  assert.ok(Number.isFinite(v.history.at(-1).chat[0].answerMs));
+  if(round===0)v=await call('a','next',{round});
+ }
+ assert.equal(v.stage,'finished');assert.equal(v.history.at(-1).outcomes[0].stake,150);
+});
+
+test('automatic question counts reflect participant count at start',async()=>{
+ const {call,setCode}=setup();
+ const created=await call('a','create',{name:'人a',phrase:pass,settings:{initialPoints:300,stake:10,turns:1,questionMode:'chat',questionsPerPlayer:9,autoQuestions:true}},201);setCode(created.code);
+ for(const id of ['b','c','d','e'])await call(id,'join',{name:'人'+id,phrase:pass});
+ const state=await call('a','start');assert.equal(state.settings.questionsPerPlayer,2);
+});

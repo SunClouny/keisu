@@ -77,6 +77,9 @@ function update(room, action, b, member) {
   if(action==='start'){
     requireValue(host,'部屋を作った人が開始してください。',403);
     requireValue(!g&&room.members.length>=2,'2人以上の待機室で開始できます。',409);
+    if(room.settings.autoQuestions && room.settings.questionMode==='chat'){
+      room.settings.questionsPerPlayer=room.members.length>=7?1:room.members.length>=5?2:3;
+    }
     room.game=createGame(room.members.map(m=>m.name),room.settings,undefined,true);return;
   }
   requireValue(g && Number.isInteger(b.round) && b.round===(g.draft?g.rounds.length:g.rounds.length-1),'画面を更新して現在のラウンドを確認してください。',409);
@@ -98,7 +101,7 @@ function update(room, action, b, member) {
       requireValue(!pending,'親が前の質問に回答するまでお待ちください。',409);
       requireValue(entries.filter(q=>q.playerId===member.id).length < room.settings.questionsPerPlayer,'質問回数を使い切りました。',409);
       requireValue(questionTurns(room).asker===member.id,'ほかの子の質問の番です。',409);
-      entries.push({playerId:member.id, question:chatText(b.text), answer:null});
+      entries.push({playerId:member.id, question:chatText(b.text), answer:null, askedAt:Date.now()});
     }else{
       requireValue(parent,'今回の親だけが回答できます。',403);
       requireValue(!!pending,'回答待ちの質問がありません。',409);
@@ -107,6 +110,7 @@ function update(room, action, b, member) {
       const text=b.isUnknown===true?'わからない':chatText(b.text);
       const isUnknown=b.isUnknown===true||/^(?:わからない|分からない|わかりません|分かりません|わからん|分からん|知らない|知りません)[。！!？?\s]*$/.test(text.normalize('NFKC'));
       pending.answer=isUnknown?'わからない':text;pending.isLie=!isUnknown&&b.isLie===true;
+      if(Number.isFinite(pending.askedAt))pending.answerMs=Math.max(0,Date.now()-pending.askedAt);
       if(isUnknown)pending.isUnknown=true;
     }
     return;
@@ -125,7 +129,7 @@ function update(room, action, b, member) {
       const settled=settle(g);
       if(room.settings.soloBonus)settled.soloBonus=room.settings.soloBonus;
       if(room.settings.questionMode==='chat' && room.chat?.round===b.round){
-        settled.chat=room.chat.entries.map(({playerId,question,answer,isLie,isUnknown})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null,...(isUnknown===true?{isUnknown:true}:{})}));
+        settled.chat=room.chat.entries.map(({playerId,question,answer,isLie,isUnknown,answerMs})=>({playerId,question,answer,isLie:typeof isLie==='boolean'?isLie:null,...(isUnknown===true?{isUnknown:true}:{}),...(Number.isFinite(answerMs)?{answerMs}:{})}));
         settled.unknownTransferVersion=1;
         settled.lieBonusTenths=Math.min(50,settled.chat.filter(q=>q.isLie===true||q.isUnknown===true).length*5);
       }

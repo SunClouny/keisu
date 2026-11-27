@@ -108,7 +108,7 @@ test('BET buttons move one step, stop at limits and remember the wager on redraw
  const page=ui(),base=betting([]),data={...base,me:'p2',settings:{...base.settings,stakeStep:10},chat:{...base.chat,complete:true}};
  page.draw(data);
  const down={dataset:{act:'stake-down'}},up={dataset:{act:'stake-up'}},select={id:'room-bet',value:'10',disabled:false};
- const group={querySelector:key=>key==='select'?select:key.includes('stake-down')?down:up};
+ const group={dataset:{limit:'100'},querySelector:key=>key==='select'?select:key.includes('stake-down')?down:up};
  for(const control of [down,up,select]) control.closest=()=>group;
  page.click(up);assert.equal(select.value,'20');page.click(down);assert.equal(select.value,'10');assert.ok(down.disabled);
  for(let i=0;i<10;i++)page.click(up);
