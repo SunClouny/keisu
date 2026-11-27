@@ -52,12 +52,16 @@ const practiceItems=[
 ];
 const practiceQuestions=['5以上ですか？','奇数ですか？','食べ物ですか？','生き物ですか？'];
 function practiceScreen(){
- const p=practice;
- const cards=practiceItems.map((item,i)=>`<button type="button" class="horse" data-act="practice-pick" data-number="${i+1}" aria-pressed="${p.pick===i+1}" ${p.questions.length<3||p.finished?'disabled':''}><b>${i+1}</b><span>${item.name}</span><small>基本 ${[5,6,7,8,9,10,12,15,20][i]}倍</small></button>`).join('');
+ const p=practice, hit=p.picks.includes(p.secret);
+ const base=[5,6,7,8,9,10,12,15,20][p.secret-1];
+ const bonus=p.picks.length===1?({5:7,6:5,7:3,8:1}[base]??0):0;
+ const odds=(base+bonus)/(p.picks.length||1);
+ const received=hit?Math.floor(p.stake*odds):0;
+ const cards=practiceItems.map((item,i)=>`<button type="button" class="horse" data-act="practice-pick" data-number="${i+1}" aria-pressed="${p.picks.includes(i+1)}" ${p.questions.length<3||p.finished?'disabled':''}><b>${i+1}</b><span>${item.name}</span><small>基本 ${[5,6,7,8,9,10,12,15,20][i]}倍</small></button>`).join('');
  const history=p.questions.map(q=>`<li>${q.text}　CPU：${q.answer?'はい':'いいえ'}</li>`).join('');
- screen.innerHTML=`<h1>1人で練習</h1><p>CPUが親です。質問を3回選び、数字を1つ予想します。</p><div class="box"><h2>数字とお題</h2><div class="grid">${cards}</div></div>
+ screen.innerHTML=`<h1>1人で練習</h1><p>CPUが親です。質問を3回選び、数字を1つ以上予想します。</p><div class="box"><h2>数字とお題</h2><div class="grid">${cards}</div></div>
  <div class="box"><h2>質問（${p.questions.length}/3回）</h2><ul>${history}</ul>${p.questions.length<3?practiceQuestions.map((q,i)=>`<button type="button" data-act="practice-question" data-example="${i}">${q}</button>`).join(''):''}</div>
- ${p.finished?`<div class="box"><h2>${p.pick===p.secret?'的中！':'はずれ'}</h2><p>正解は ${p.secret}　${practiceItems[p.secret-1].name}</p><p>賭け点 ${p.stake}点 ／ 収支 ${signedPoints(p.pick===p.secret?p.stake*(([12,11,10,9,9,10,12,15,20][p.secret-1])-1):-p.stake)}</p></div><button data-act="practice-start">もう一度</button>`:p.questions.length===3?`<div class="box">賭け点　<button data-act="practice-bet" data-delta="-10" ${p.stake<=10?'disabled':''}>−10</button>　<strong>${p.stake}点</strong>　<button data-act="practice-bet" data-delta="10" ${p.stake>=100?'disabled':''}>＋10</button></div><button class="primary" data-act="practice-finish" ${p.pick?'':'disabled'}>予想を確定</button>`:''}
+ ${p.finished?`<div class="box"><h2>${hit?'的中！':'はずれ'}</h2><p>正解は ${p.secret}　${practiceItems[p.secret-1].name}</p><p>予想 ${p.picks.join('・')} ／ 賭け点 ${p.stake}点</p>${hit?`<p>倍率 ${formatOdds(odds)}倍${bonus?`（単独ボーナス ＋${bonus}倍）`:''}</p>`:''}<p>受取 ${received}点 ／ 収支 ${signedPoints(received-p.stake)}</p></div><button data-act="practice-start">もう一度</button>`:p.questions.length===3?`<div class="box">賭け点　<button data-act="practice-bet" data-delta="-10" ${p.stake<=10?'disabled':''}>−10</button>　<strong>${p.stake}点</strong>　<button data-act="practice-bet" data-delta="10" ${p.stake>=100?'disabled':''}>＋10</button></div><button class="primary" data-act="practice-finish" ${p.picks.length?'':'disabled'}>予想を確定</button>`:''}
  <button data-act="practice-home">開始画面へ</button>`;
 }
 function say(text){errorBox.textContent=text;}
@@ -376,15 +380,19 @@ screen.addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.t
 });});
 screen.addEventListener('click',event=>{const b=event.target.closest('[data-act]');if(!b||b.disabled||busy)return;
  const a=b.dataset.act;
- if(a==='practice-start'){practice={secret:Math.floor(Math.random()*9)+1,questions:[],pick:0,stake:10,finished:false};practiceScreen();return;}
+ if(a==='practice-start'){practice={secret:Math.floor(Math.random()*9)+1,questions:[],picks:[],stake:10,finished:false};practiceScreen();return;}
  if(a==='practice-home'){practice=null;lobbyForm();return;}
- if(a==='practice-pick'){practice.pick=Number(b.dataset.number);practiceScreen();return;}
+ if(a==='practice-pick'){
+  const number=Number(b.dataset.number);
+  practice.picks=practice.picks.includes(number)?practice.picks.filter(n=>n!==number):[...practice.picks,number];
+  practiceScreen();return;
+ }
  if(a==='practice-question'){
   const index=Number(b.dataset.example),n=practice.secret,item=practiceItems[n-1];
   practice.questions.push({text:practiceQuestions[index],answer:[n>=5,n%2===1,item.food,item.alive][index]});practiceScreen();return;
  }
  if(a==='practice-bet'){practice.stake=Math.min(100,Math.max(10,practice.stake+Number(b.dataset.delta)));practiceScreen();return;}
- if(a==='practice-finish'){practice.finished=true;practiceScreen();return;}
+ if(a==='practice-finish'){if(!practice.picks.length)return;practice.finished=true;practiceScreen();return;}
  if(a==='question-example'){
   questionDraft=['5以上ですか？','奇数ですか？','食べ物ですか？','生き物ですか？','家の中にありますか？'][Number(b.dataset.example)];
   const field=document.querySelector('#question-text');field.value=questionDraft;field.focus();return;

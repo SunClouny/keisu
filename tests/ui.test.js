@@ -142,3 +142,20 @@ test('odds rules are available in question screens and match each room mode',()=
  assert.doesNotMatch(page.html,/同じ正解を予想した人数で、基本オッズを割ります/);
  assert.match(page.html,/上乗せは選んだ数では割りません/);
 });
+
+
+test('practice supports multiple picks, toggling and correct payouts',()=>{
+ const page=ui();const click=(act,number)=>page.click({dataset:{act,number:String(number)}});
+ page.click({dataset:{act:'practice-start'}});
+ page.run("practice.secret=1;practice.questions=[{text:'質問',answer:true},{text:'質問',answer:true},{text:'質問',answer:true}];practiceScreen()");
+ click('practice-pick',1);click('practice-pick',2);
+ assert.match(page.html,/data-number="1" aria-pressed="true"/);
+ assert.match(page.html,/data-number="2" aria-pressed="true"/);
+ page.click({dataset:{act:'practice-finish'}});
+ assert.match(page.html,/倍率 2.5倍/);assert.match(page.html,/受取 25点 ／ 収支 \+15点/);
+ page.click({dataset:{act:'practice-start'}});
+ page.run("practice.secret=1;practice.questions=[{text:'質問',answer:true},{text:'質問',answer:true},{text:'質問',answer:true}];practiceScreen()");
+ click('practice-pick',1);click('practice-pick',2);click('practice-pick',2);
+ page.click({dataset:{act:'practice-finish'}});
+ assert.match(page.html,/倍率 12倍/);assert.match(page.html,/受取 120点 ／ 収支 \+110点/);
+});
